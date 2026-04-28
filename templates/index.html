@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>StudyMate AI — PDF 학습 보조 도구</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
+</head>
+<body>
+  <div class="container">
+    <!-- Header -->
+    <header class="header">
+      <div class="logo">
+        <span class="logo-icon">📚</span>
+        <h1>StudyMate AI</h1>
+      </div>
+      <p class="subtitle">PDF를 업로드하면 AI가 내용을 요약하고 핵심 포인트를 추출해 드립니다.</p>
+    </header>
+
+    <!-- Upload Section -->
+    <section class="upload-section" id="uploadSection">
+      <form id="uploadForm" enctype="multipart/form-data">
+        <div
+          class="drop-zone"
+          id="dropZone"
+          role="button"
+          tabindex="0"
+          aria-label="PDF 파일을 드래그하거나 클릭하여 업로드하세요"
+        >
+          <div class="drop-zone__icon">📄</div>
+          <p class="drop-zone__text">PDF 파일을 여기에 드래그하거나</p>
+          <label class="btn btn--primary" for="fileInput">
+            파일 선택
+          </label>
+          <input
+            type="file"
+            id="fileInput"
+            name="file"
+            accept=".pdf"
+            class="visually-hidden"
+          />
+          <p class="drop-zone__hint" id="fileHint">최대 16 MB · PDF 형식만 지원</p>
+        </div>
+
+        <button type="submit" class="btn btn--analyze" id="analyzeBtn" disabled>
+          <span class="btn__label">AI 분석 시작</span>
+          <span class="btn__spinner" aria-hidden="true"></span>
+        </button>
+      </form>
+    </section>
+
+    <!-- Error Banner -->
+    <div class="error-banner" id="errorBanner" role="alert" aria-live="polite" hidden>
+      <span class="error-banner__icon">⚠️</span>
+      <span id="errorMessage"></span>
+    </div>
+
+    <!-- Results Section -->
+    <section class="results-section" id="resultsSection" hidden>
+      <!-- Summary Card -->
+      <div class="card" id="summaryCard">
+        <div class="card__header">
+          <span class="card__icon">📝</span>
+          <h2 class="card__title">내용 요약</h2>
+        </div>
+        <p class="card__body" id="summaryText"></p>
+      </div>
+
+      <!-- Key Points Card -->
+      <div class="card" id="keyPointsCard">
+        <div class="card__header">
+          <span class="card__icon">🎯</span>
+          <h2 class="card__title">핵심 포인트</h2>
+        </div>
+        <ul class="key-points-list" id="keyPointsList"></ul>
+      </div>
+
+      <!-- Reset Button -->
+      <button class="btn btn--reset" id="resetBtn">다른 파일 분석하기</button>
+    </section>
+  </div>
+
+  <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+</body>
+</html>
