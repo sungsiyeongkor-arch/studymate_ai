@@ -71,7 +71,9 @@ function saveSettings() {
     mode:             getMode(),
     theme:            document.documentElement.dataset.theme || 'light',
   };
-  try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(s)); } catch (_) {}
+  try { localStorage.setItem(SETTINGS_KEY, JSON.stringify(s)); } catch (err) {
+    console.error('Settings could not be saved:', err);
+  }
 }
 
 function loadSettings() {
@@ -88,7 +90,9 @@ function loadSettings() {
       if (radio) radio.checked = true;
     }
     if (s.theme) applyTheme(s.theme);
-  } catch (_) {}
+  } catch (err) {
+    console.error('Settings could not be loaded:', err);
+  }
 
   updateRangeDisplays();
   updateModeVisibility();
@@ -299,16 +303,18 @@ function renderQuiz(data) {
         // Disable all options for this question
         optsEl.querySelectorAll('.quiz-option').forEach((b) => { b.disabled = true; });
 
-        const letter    = opt.charAt(0).toUpperCase();
-        const isCorrect = letter === String(q.answer).toUpperCase();
+        // Safely extract leading letter (e.g. "A" from "A. 선택지")
+        const trimmed   = (typeof opt === 'string' ? opt : '').trim();
+        const letter    = trimmed.length > 0 ? trimmed.charAt(0).toUpperCase() : '';
+        const answer    = String(q.answer || '').trim().toUpperCase();
+        const isCorrect = letter !== '' && letter === answer;
         btn.classList.add(isCorrect ? 'correct' : 'incorrect');
 
         if (!isCorrect) {
           // Highlight the correct answer
           optsEl.querySelectorAll('.quiz-option').forEach((b) => {
-            if (b.textContent.charAt(0).toUpperCase() === String(q.answer).toUpperCase()) {
-              b.classList.add('correct');
-            }
+            const bFirst = (b.textContent || '').trim().charAt(0).toUpperCase();
+            if (bFirst === answer) b.classList.add('correct');
           });
         }
 
@@ -359,7 +365,8 @@ document.querySelectorAll('.copy-btn').forEach((btn) => {
       const orig = btn.textContent;
       btn.textContent = '✅';
       setTimeout(() => { btn.textContent = orig; }, 1500);
-    } catch (_) {
+    } catch (err) {
+      console.error('Clipboard copy failed:', err);
       showError('클립보드 복사에 실패했습니다. 브라우저 권한을 확인해 주세요.');
     }
   });

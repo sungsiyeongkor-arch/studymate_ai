@@ -2,6 +2,7 @@ import os
 import io
 import json
 import logging
+from typing import Optional
 import pdfplumber
 from flask import Flask, render_template, request, jsonify
 from openai import OpenAI
@@ -25,7 +26,7 @@ app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = MAX_CONTENT_LENGTH
 
 # ── OpenAI client (singleton) ─────────────────────────────────────────────────
-_openai_client: "OpenAI | None" = None
+_openai_client: Optional[OpenAI] = None
 
 
 def get_openai_client() -> OpenAI:
@@ -185,11 +186,14 @@ def analyze():
         return jsonify({"error": "PDF 파일만 업로드 가능합니다."}), 400
 
     # Settings from form data
-    mode              = request.form.get("mode", "analyze")            # analyze | quiz
-    language          = request.form.get("language", "ko")             # ko | en
-    num_points        = min(int(request.form.get("num_points", 10)), 20)
-    summary_sentences = min(int(request.form.get("summary_sentences", 5)), 10)
-    num_questions     = min(int(request.form.get("num_questions", 5)), 15)
+    mode     = request.form.get("mode", "analyze")  # analyze | quiz
+    language = request.form.get("language", "ko")   # ko | en
+    try:
+        num_points        = min(int(request.form.get("num_points", 10)), 20)
+        summary_sentences = min(int(request.form.get("summary_sentences", 5)), 10)
+        num_questions     = min(int(request.form.get("num_questions", 5)), 15)
+    except (ValueError, TypeError):
+        return jsonify({"error": "설정값이 올바르지 않습니다."}), 400
 
     filename = secure_filename(file.filename)
     logger.info("Processing file: %s | mode=%s lang=%s", filename, mode, language)
@@ -218,13 +222,13 @@ def analyze():
                 num_points=num_points,
                 summary_sentences=summary_sentences,
             )
-    except ValueError:
-        logger.error("Analysis failed: configuration or response format error")
+    except ValueError as exc:
+        logger.error("Analysis failed: configuration or response format error: %s", exc, exc_info=True)
         return jsonify({
             "error": "AI 분석 설정 오류가 발생했습니다. 서버 관리자에게 문의해 주세요."
         }), 500
     except Exception as exc:
-        logger.error("GPT API error: %s", exc)
+        logger.error("GPT API error: %s", exc, exc_info=True)
         return jsonify({
             "error": "AI 분석 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요."
         }), 502
