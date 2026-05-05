@@ -1,0 +1,91 @@
+{# NEW: 개인 설정 (Profile) page #}
+{% extends "base.html" %}
+{% block title %}개인 설정 — StudyMate AI{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1 class="page-title">개인 설정</h1>
+  <p class="page-subtitle">계정 정보 및 학습 통계</p>
+</div>
+
+<div class="profile-layout">
+
+  <!-- Profile card -->
+  <div class="profile-card">
+    <div class="profile-card__avatar-wrap">
+      {% if current_user.avatar_url %}
+        <img src="{{ current_user.avatar_url }}" alt="프로필 사진" class="profile-card__avatar" />
+      {% else %}
+        <div class="profile-card__avatar profile-card__avatar--placeholder" aria-hidden="true">👤</div>
+      {% endif %}
+    </div>
+    <div class="profile-card__info">
+      <h2 class="profile-card__name">{{ current_user.name }}</h2>
+      <p class="profile-card__email">{{ current_user.email }}</p>
+      <p class="profile-card__joined">가입일: {{ current_user.created_at.strftime('%Y년 %m월 %d일') }}</p>
+    </div>
+    <a href="{{ url_for('auth.logout') }}" class="btn btn--danger btn--sm profile-card__logout">
+      🚪 로그아웃
+    </a>
+  </div>
+
+  <!-- Stats grid -->
+  <div class="stats-grid">
+    <div class="stat-card">
+      <div class="stat-card__icon" aria-hidden="true">📄</div>
+      <div class="stat-card__value">{{ stats.materials }}</div>
+      <div class="stat-card__label">업로드 자료</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-card__icon" aria-hidden="true">📝</div>
+      <div class="stat-card__value">{{ stats.notes }}</div>
+      <div class="stat-card__label">요약 노트</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-card__icon" aria-hidden="true">❓</div>
+      <div class="stat-card__value">{{ stats.quizzes }}</div>
+      <div class="stat-card__label">예상 문제 세트</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-card__icon" aria-hidden="true">📊</div>
+      <div class="stat-card__value">{{ stats.activity }}</div>
+      <div class="stat-card__label">총 활동 횟수</div>
+    </div>
+  </div>
+
+  <!-- Appearance settings -->
+  <section class="settings-section">
+    <h2 class="settings-section__title">🎨 화면 설정</h2>
+    <div class="settings-row">
+      <span class="settings-row__label">다크 모드</span>
+      <button id="themeToggleProfile" class="theme-toggle-btn" aria-label="다크모드 전환">
+        <span id="themeToggleLabel">🌙 다크 모드로 전환</span>
+      </button>
+    </div>
+  </section>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+'use strict';
+// Sync theme toggle button label
+const btn = document.getElementById('themeToggleProfile');
+const lbl = document.getElementById('themeToggleLabel');
+function updateLabel() {
+  const isDark = document.documentElement.dataset.theme === 'dark';
+  lbl.textContent = isDark ? '☀️ 라이트 모드로 전환' : '🌙 다크 모드로 전환';
+}
+updateLabel();
+btn.addEventListener('click', () => {
+  const next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+  document.documentElement.dataset.theme = next;
+  try { localStorage.setItem('studymate_theme', JSON.stringify(next)); } catch(e) {}
+  updateLabel();
+  // Also sync the topbar toggle
+  const topbarToggle = document.getElementById('themeToggle');
+  if (topbarToggle) topbarToggle.textContent = next === 'dark' ? '☀️' : '🌙';
+});
+</script>
+{% endblock %}

@@ -1,0 +1,138 @@
+{# NEW: 예상 문제 상세 page – interactive quiz #}
+{% extends "base.html" %}
+{% block title %}{{ quiz_set.title }} — StudyMate AI{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div class="breadcrumb">
+    <a href="{{ url_for('quizzes_page') }}">예상 문제</a>
+    <span aria-hidden="true"> / </span>
+    <span>{{ quiz_set.title }}</span>
+  </div>
+  <div class="page-header__actions">
+    <button class="btn btn--secondary btn--sm" id="resetQuizBtn">🔄 다시 풀기</button>
+    <button class="btn btn--danger btn--sm" id="deleteQuizBtn" data-id="{{ quiz_set.id }}">🗑️ 삭제</button>
+  </div>
+</div>
+
+<div class="quiz-viewer">
+  <div class="quiz-meta">
+    <span>❓ {{ questions | length }}문항</span>
+    <span>📅 {{ quiz_set.created_at.strftime('%Y년 %m월 %d일') }}</span>
+    {% if quiz_set.material %}<span>📄 {{ quiz_set.material.name }}</span>{% endif %}
+  </div>
+
+  <div id="quizContainer" aria-label="퀴즈 문제 목록"></div>
+
+  <div class="quiz-score-panel" id="quizScorePanel" hidden aria-live="polite">
+    <div class="quiz-score-card">
+      <div class="quiz-score-card__emoji" aria-hidden="true" id="scoreEmoji">🏆</div>
+      <div class="quiz-score-card__label">최종 점수</div>
+      <div class="quiz-score-card__score" id="scoreDisplay">0 / 0</div>
+      <div class="quiz-score-card__pct" id="scorePct"></div>
+      <button class="btn btn--secondary" id="reviewBtn">정답 확인하기</button>
+    </div>
+  </div>
+</div>
+
+<script id="questionsData" type="application/json">{{ questions_json | safe }}</script>
+{% endblock %}
+
+{% block scripts %}
+<script>
+'use strict';
+// NEW: begin – interactive quiz renderer
+const QUESTIONS = JSON.parse(document.getElementById('questionsData').textContent);
+let answered = 0;
+let correct  = 0;
+const total  = QUESTIONS.length;
+const container = document.getElementById('quizContainer');
+const scorePanel = document.getElementById('quizScorePanel');
+const scoreDisplay = document.getElementById('scoreDisplay');
+const scorePct     = document.getElementById('scorePct');
+const scoreEmoji   = document.getElementById('scoreEmoji');
+
+function buildQuiz() {
+  answered = 0; correct = 0;
+  container.innerHTML = '';
+  scorePanel.hidden = true;
+
+  QUESTIONS.forEach((q, idx) => {
+    const card = document.createElement('div');
+    card.className = 'quiz-card';
+    card.dataset.answered = 'false';
+
+    const qEl = document.createElement('div');
+    qEl.className = 'quiz-card__question';
+    qEl.innerHTML = `<span class="q-num">Q${idx + 1}.</span> ${q.question}`;
+    card.appendChild(qEl);
+
+    const optsEl = document.createElement('div');
+    optsEl.className = 'quiz-options';
+
+    q.options.forEach(opt => {
+      const btn = document.createElement('button');
+      btn.className = 'quiz-option';
+      btn.textContent = opt;
+      btn.addEventListener('click', () => {
+        if (card.dataset.answered === 'true') return;
+        card.dataset.answered = 'true';
+        optsEl.querySelectorAll('.quiz-option').forEach(b => { b.disabled = true; });
+
+        const letter  = (opt || '').trim().charAt(0).toUpperCase();
+        const answer  = (q.answer || '').trim().toUpperCase();
+        const isRight = letter === answer;
+        btn.classList.add(isRight ? 'correct' : 'incorrect');
+        if (!isRight) {
+          optsEl.querySelectorAll('.quiz-option').forEach(b => {
+            if ((b.textContent || '').trim().charAt(0).toUpperCase() === answer) {
+              b.classList.add('correct');
+            }
+          });
+        }
+
+        // Show explanation
+        if (q.explanation) {
+          const expl = document.createElement('div');
+          expl.className = 'quiz-explanation';
+          expl.textContent = `💡 ${q.explanation}`;
+          card.appendChild(expl);
+        }
+
+        answered++;
+        if (isRight) correct++;
+        if (answered === total) showScore();
+      });
+      optsEl.appendChild(btn);
+    });
+
+    card.appendChild(optsEl);
+    container.appendChild(card);
+  });
+}
+
+function showScore() {
+  const pct = Math.round((correct / total) * 100);
+  scoreDisplay.textContent = `${correct} / ${total}`;
+  scorePct.textContent = `${pct}%`;
+  scoreEmoji.textContent = pct >= 80 ? '🏆' : pct >= 50 ? '📚' : '💪';
+  scorePanel.hidden = false;
+  scorePanel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+document.getElementById('resetQuizBtn').addEventListener('click', buildQuiz);
+document.getElementById('reviewBtn').addEventListener('click', () => {
+  container.querySelectorAll('.quiz-option:not([disabled])').forEach(b => b.click());
+});
+document.getElementById('deleteQuizBtn').addEventListener('click', async () => {
+  if (!confirm('이 문제 세트를 삭제하시겠습니까?')) return;
+  const id = document.getElementById('deleteQuizBtn').dataset.id;
+  const res = await fetch(`/api/quizsets/${id}`, { method: 'DELETE' });
+  if (res.ok) { window.location.href = '{{ url_for("quizzes_page") }}'; }
+  else { alert('삭제 중 오류가 발생했습니다.'); }
+});
+
+buildQuiz();
+// NEW: end
+</script>
+{% endblock %}

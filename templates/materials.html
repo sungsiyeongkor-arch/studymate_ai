@@ -1,0 +1,196 @@
+{# NEW: 자료 관리 page – folder list + file table #}
+{% extends "base.html" %}
+{% block title %}자료 관리 — StudyMate AI{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1 class="page-title">자료 관리</h1>
+  <p class="page-subtitle">폴더별로 업로드한 학습 자료를 관리하세요</p>
+</div>
+
+<div class="materials-layout">
+
+  <!-- Folder sidebar -->
+  <aside class="folder-panel" aria-label="폴더 목록">
+    <div class="panel__header">
+      <h2 class="panel__title">📁 폴더</h2>
+      <button class="btn btn--sm btn--primary" id="newFolderBtn">+ 새 폴더</button>
+    </div>
+
+    <ul class="folder-list" aria-label="폴더 목록">
+      <li>
+        <a href="{{ url_for('materials_page') }}"
+           class="folder-item {% if not active_folder %}folder-item--active{% endif %}">
+          <span aria-hidden="true">📂</span> 전체 자료
+          <span class="folder-item__count">{{ materials|length if not active_folder else '' }}</span>
+        </a>
+      </li>
+      {% for folder in folders %}
+        <li class="folder-item-row">
+          <a href="{{ url_for('materials_page', folder=folder.id) }}"
+             class="folder-item {% if active_folder == folder.id %}folder-item--active{% endif %}"
+             style="border-left-color: {{ folder.color }}">
+            <span aria-hidden="true">📁</span> {{ folder.name }}
+          </a>
+          <button class="btn-icon-danger folder-delete" data-id="{{ folder.id }}"
+                  data-name="{{ folder.name }}" aria-label="{{ folder.name }} 폴더 삭제">✕</button>
+        </li>
+      {% endfor %}
+    </ul>
+  </aside>
+
+  <!-- File table -->
+  <div class="files-panel">
+    <!-- Controls -->
+    <div class="list-controls">
+      <form method="get" action="{{ url_for('materials_page') }}" class="search-form" role="search">
+        {% if active_folder %}
+          <input type="hidden" name="folder" value="{{ active_folder }}" />
+        {% endif %}
+        <input type="search" name="q" value="{{ q }}" placeholder="파일 검색…"
+               class="search-input" aria-label="파일 검색" />
+        <button type="submit" class="btn btn--primary btn--sm">검색</button>
+        <select name="sort" class="sort-select" onchange="this.form.submit()" aria-label="정렬 기준">
+          <option value="newest" {% if sort == 'newest' %}selected{% endif %}>최신순</option>
+          <option value="oldest" {% if sort == 'oldest' %}selected{% endif %}>오래된순</option>
+          <option value="name"   {% if sort == 'name'   %}selected{% endif %}>이름순</option>
+        </select>
+      </form>
+      <a href="{{ url_for('upload_page') }}" class="btn btn--primary">+ 업로드</a>
+    </div>
+
+    {% if materials %}
+      <div class="table-wrapper">
+        <table class="materials-table" aria-label="자료 목록">
+          <thead>
+            <tr>
+              <th scope="col">파일명</th>
+              <th scope="col">폴더</th>
+              <th scope="col">업로드일</th>
+              <th scope="col">크기</th>
+              <th scope="col">작업</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for mat in materials %}
+              <tr>
+                <td class="mat-name">
+                  <span class="mat-icon" aria-hidden="true">📄</span>
+                  {{ mat.name }}
+                </td>
+                <td>
+                  {% if mat.folder %}
+                    <span class="tag-chip" style="background: {{ mat.folder.color }}20; color: {{ mat.folder.color }}">
+                      {{ mat.folder.name }}
+                    </span>
+                  {% else %}
+                    <span class="text-muted">—</span>
+                  {% endif %}
+                </td>
+                <td class="text-muted">{{ mat.upload_date.strftime('%Y.%m.%d') }}</td>
+                <td class="text-muted">{{ mat.file_size_display }}</td>
+                <td>
+                  <div class="table-actions">
+                    <button class="btn btn--sm btn--secondary create-note-btn"
+                            data-id="{{ mat.id }}" data-name="{{ mat.name }}">📝 요약</button>
+                    <button class="btn btn--sm btn--secondary create-quiz-btn"
+                            data-id="{{ mat.id }}" data-name="{{ mat.name }}">❓ 문제</button>
+                    <button class="btn-icon-danger delete-mat-btn"
+                            data-id="{{ mat.id }}" aria-label="{{ mat.name }} 삭제">🗑️</button>
+                  </div>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% elif q %}
+      <div class="empty-state">
+        <p>«{{ q }}»에 해당하는 자료가 없습니다.</p>
+      </div>
+    {% else %}
+      <div class="empty-state">
+        <span class="empty-state__icon" aria-hidden="true">📁</span>
+        <p>이 폴더에 자료가 없습니다.</p>
+        <a href="{{ url_for('upload_page') }}" class="btn btn--primary btn--sm">업로드하기</a>
+      </div>
+    {% endif %}
+  </div><!-- /files-panel -->
+
+</div><!-- /materials-layout -->
+
+<!-- New folder modal -->
+<div class="modal-overlay" id="folderModalOverlay" hidden aria-hidden="true">
+  <div class="modal" role="dialog" aria-labelledby="folderModalTitle" aria-modal="true">
+    <div class="modal__header">
+      <h2 class="modal__title" id="folderModalTitle">새 폴더 만들기</h2>
+      <button class="icon-btn modal__close" id="folderModalClose" aria-label="닫기">✕</button>
+    </div>
+    <div class="modal__body">
+      <label class="option-label" for="folderNameInput">폴더 이름</label>
+      <input type="text" id="folderNameInput" class="text-input" placeholder="예: 운영체제" maxlength="60" />
+      <label class="option-label" for="folderColorInput" style="margin-top:.75rem">폴더 색상</label>
+      <input type="color" id="folderColorInput" value="#4f46e5" class="color-input" />
+    </div>
+    <div class="modal__footer">
+      <button class="btn btn--secondary" id="folderModalCancel">취소</button>
+      <button class="btn btn--primary" id="folderModalSave">만들기</button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+'use strict';
+// NEW: begin – materials page JS
+// Folder modal
+const overlay   = document.getElementById('folderModalOverlay');
+const nameInput = document.getElementById('folderNameInput');
+const colorInput= document.getElementById('folderColorInput');
+const openModal = () => { overlay.hidden = false; overlay.removeAttribute('aria-hidden'); nameInput.focus(); };
+const closeModal= () => { overlay.hidden = true;  overlay.setAttribute('aria-hidden','true'); };
+
+document.getElementById('newFolderBtn').addEventListener('click', openModal);
+document.getElementById('folderModalClose').addEventListener('click', closeModal);
+document.getElementById('folderModalCancel').addEventListener('click', closeModal);
+overlay.addEventListener('click', e => { if(e.target === overlay) closeModal(); });
+
+document.getElementById('folderModalSave').addEventListener('click', async () => {
+  const name  = nameInput.value.trim();
+  const color = colorInput.value;
+  if (!name) { nameInput.focus(); return; }
+  const res = await fetch('/api/folders', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({name, color}),
+  });
+  if (res.ok) { window.location.reload(); }
+  else {
+    const data = await res.json();
+    alert(data.error || '폴더 생성 중 오류가 발생했습니다.');
+  }
+});
+
+// Delete folder
+document.querySelectorAll('.folder-delete').forEach(btn => {
+  btn.addEventListener('click', async () => {
+    if (!confirm(`"${btn.dataset.name}" 폴더를 삭제하시겠습니까?\n폴더 내 자료는 삭제되지 않습니다.`)) return;
+    const res = await fetch(`/api/folders/${btn.dataset.id}`, { method: 'DELETE' });
+    if (res.ok) { window.location.reload(); }
+    else { alert('폴더 삭제 중 오류가 발생했습니다.'); }
+  });
+});
+
+// Delete material
+document.querySelectorAll('.delete-mat-btn').forEach(btn => {
+  btn.addEventListener('click', async () => {
+    if (!confirm('이 자료를 삭제하시겠습니까? 관련 노트 및 문제는 유지됩니다.')) return;
+    const res = await fetch(`/api/materials/${btn.dataset.id}`, { method: 'DELETE' });
+    if (res.ok) { btn.closest('tr').remove(); }
+    else { alert('삭제 중 오류가 발생했습니다.'); }
+  });
+});
+// NEW: end
+</script>
+{% endblock %}

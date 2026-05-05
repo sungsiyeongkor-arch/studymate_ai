@@ -1,0 +1,106 @@
+{# NEW: 예상 문제 목록 page #}
+{% extends "base.html" %}
+{% block title %}예상 문제 — StudyMate AI{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1 class="page-title">예상 문제</h1>
+  <p class="page-subtitle">AI가 생성한 객관식 문제 세트</p>
+</div>
+
+<div class="two-col-layout">
+
+  <!-- Quiz sets list -->
+  <div class="notes-main">
+    <div class="list-controls">
+      <form method="get" action="{{ url_for('quizzes_page') }}" class="search-form" role="search">
+        <input type="search" name="q" value="{{ q }}" placeholder="문제 세트 검색…"
+               class="search-input" aria-label="문제 세트 검색" />
+        <button type="submit" class="btn btn--primary btn--sm">검색</button>
+        <select name="sort" class="sort-select" onchange="this.form.submit()" aria-label="정렬 기준">
+          <option value="newest" {% if sort == 'newest' %}selected{% endif %}>최신순</option>
+          <option value="oldest" {% if sort == 'oldest' %}selected{% endif %}>오래된순</option>
+        </select>
+      </form>
+      <a href="{{ url_for('upload_page') }}" class="btn btn--primary">
+        + 새 예상 문제
+      </a>
+    </div>
+
+    {% if quiz_sets %}
+      <div class="notes-grid" aria-label="예상 문제 목록">
+        {% for qs in quiz_sets %}
+          <article class="note-card">
+            <a href="{{ url_for('quiz_detail', set_id=qs.id) }}" class="note-card__link">
+              <div class="note-card__header">
+                <span class="note-card__icon" aria-hidden="true">❓</span>
+                <h2 class="note-card__title">{{ qs.title }}</h2>
+              </div>
+              <p class="note-card__meta">
+                문항 수 {{ qs.question_count }}개
+                · {{ qs.created_at.strftime('%Y.%m.%d') }}
+                {% if qs.material %}· {{ qs.material.name }}{% endif %}
+              </p>
+            </a>
+            <div class="note-card__actions">
+              <button class="btn-icon-danger" data-action="delete-quiz" data-id="{{ qs.id }}"
+                      aria-label="문제 세트 삭제">🗑️</button>
+            </div>
+          </article>
+        {% endfor %}
+      </div>
+    {% elif q %}
+      <div class="empty-state">
+        <p>«{{ q }}»에 해당하는 문제 세트가 없습니다.</p>
+        <a href="{{ url_for('quizzes_page') }}" class="btn btn--secondary btn--sm">전체 보기</a>
+      </div>
+    {% else %}
+      <div class="empty-state">
+        <span class="empty-state__icon" aria-hidden="true">❓</span>
+        <p>아직 예상 문제가 없습니다.</p>
+        <a href="{{ url_for('upload_page') }}" class="btn btn--primary btn--sm">첫 문제 만들기</a>
+      </div>
+    {% endif %}
+  </div>
+
+  <!-- Recent quiz panel -->
+  <aside class="panel" aria-label="최근 예상 문제">
+    <div class="panel__header">
+      <h2 class="panel__title">최근 예상 문제</h2>
+    </div>
+    {% if recent %}
+      <ul class="recent-list">
+        {% for qs in recent %}
+          <li class="recent-item">
+            <span class="recent-item__icon" aria-hidden="true">❓</span>
+            <div class="recent-item__body">
+              <a href="{{ url_for('quiz_detail', set_id=qs.id) }}" class="recent-item__name">
+                {{ qs.title }}
+              </a>
+              <span class="recent-item__meta">{{ qs.question_count }}문항 · {{ qs.created_at.strftime('%Y.%m.%d') }}</span>
+            </div>
+          </li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <div class="empty-state empty-state--sm"><p>없음</p></div>
+    {% endif %}
+  </aside>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+'use strict';
+document.querySelectorAll('[data-action="delete-quiz"]').forEach(btn => {
+  btn.addEventListener('click', async () => {
+    if (!confirm('이 문제 세트를 삭제하시겠습니까?')) return;
+    const id = btn.dataset.id;
+    const res = await fetch(`/api/quizsets/${id}`, { method: 'DELETE' });
+    if (res.ok) { btn.closest('.note-card').remove(); }
+    else { alert('삭제 중 오류가 발생했습니다.'); }
+  });
+});
+</script>
+{% endblock %}

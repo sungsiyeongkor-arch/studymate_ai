@@ -28,3 +28,9 @@ Thumbs.db
 
 # Uploaded files (if saved to disk)
 uploads/
+
+# NEW: begin – database files (auto-created at runtime)
+*.db
+*.db-shm
+*.db-wal
+# NEW: end

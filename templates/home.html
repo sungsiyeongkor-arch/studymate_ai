@@ -1,0 +1,113 @@
+{# NEW: Home dashboard page #}
+{% extends "base.html" %}
+{% block title %}홈 — StudyMate AI{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1 class="page-title">안녕하세요, {{ current_user.name }}님 👋</h1>
+  <p class="page-subtitle">오늘도 스마트하게 공부해 보세요.</p>
+</div>
+
+<!-- Quick-action cards -->
+<div class="dashboard-grid">
+
+  <a href="{{ url_for('upload_page') }}" class="dash-card dash-card--upload">
+    <div class="dash-card__icon" aria-hidden="true">📤</div>
+    <div class="dash-card__body">
+      <h2 class="dash-card__title">자료 업로드</h2>
+      <p class="dash-card__desc">PDF를 올리고 AI 분석을 시작하세요</p>
+    </div>
+    <div class="dash-card__stat">{{ stats.materials }}개</div>
+  </a>
+
+  <a href="{{ url_for('notes_page') }}" class="dash-card dash-card--notes">
+    <div class="dash-card__icon" aria-hidden="true">📝</div>
+    <div class="dash-card__body">
+      <h2 class="dash-card__title">요약 노트</h2>
+      <p class="dash-card__desc">AI가 만든 구조화된 학습 노트</p>
+    </div>
+    <div class="dash-card__stat">{{ stats.notes }}개</div>
+  </a>
+
+  <a href="{{ url_for('quizzes_page') }}" class="dash-card dash-card--quiz">
+    <div class="dash-card__icon" aria-hidden="true">❓</div>
+    <div class="dash-card__body">
+      <h2 class="dash-card__title">예상 문제</h2>
+      <p class="dash-card__desc">AI가 생성한 객관식 문제로 복습</p>
+    </div>
+    <div class="dash-card__stat">{{ stats.quizzes }}개</div>
+  </a>
+
+  <a href="{{ url_for('materials_page') }}" class="dash-card dash-card--materials">
+    <div class="dash-card__icon" aria-hidden="true">📁</div>
+    <div class="dash-card__body">
+      <h2 class="dash-card__title">자료 관리</h2>
+      <p class="dash-card__desc">폴더별로 학습 자료를 정리하세요</p>
+    </div>
+    <div class="dash-card__stat">{{ stats.folders }}개 폴더</div>
+  </a>
+
+</div><!-- /dashboard-grid -->
+
+<!-- Recent section -->
+<div class="two-col-layout">
+
+  <!-- Left: recent materials -->
+  <section class="panel" aria-label="최근 학습 자료">
+    <div class="panel__header">
+      <h2 class="panel__title">최근 학습 자료</h2>
+      <a href="{{ url_for('materials_page') }}" class="panel__link">전체 보기</a>
+    </div>
+    {% if recent_materials %}
+      <ul class="recent-list" aria-label="최근 자료 목록">
+        {% for mat in recent_materials %}
+          <li class="recent-item">
+            <span class="recent-item__icon" aria-hidden="true">📄</span>
+            <div class="recent-item__body">
+              <span class="recent-item__name">{{ mat.name }}</span>
+              <span class="recent-item__meta">{{ mat.upload_date.strftime('%Y.%m.%d') }} · {{ mat.file_size_display }}</span>
+            </div>
+          </li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <div class="empty-state">
+        <p>아직 업로드한 자료가 없습니다.</p>
+        <a href="{{ url_for('upload_page') }}" class="btn btn--primary btn--sm">지금 업로드</a>
+      </div>
+    {% endif %}
+  </section>
+
+  <!-- Right: recent activity -->
+  <section class="panel" aria-label="최근 활동">
+    <div class="panel__header">
+      <h2 class="panel__title">최근 활동</h2>
+    </div>
+    {% if recent_activity %}
+      <ul class="recent-list" aria-label="최근 활동 목록">
+        {% for act in recent_activity %}
+          <li class="recent-item">
+            <span class="recent-item__icon" aria-hidden="true">
+              {% if act.resource_type == 'note' %}📝
+              {% elif act.resource_type == 'quiz' %}❓
+              {% else %}📄{% endif %}
+            </span>
+            <div class="recent-item__body">
+              <span class="recent-item__name">{{ act.resource_name or '알 수 없음' }}</span>
+              <span class="recent-item__meta">
+                {{ act.action_display if act.action_display else act.action }}
+                · {{ act.created_at.strftime('%m.%d %H:%M') }}
+              </span>
+            </div>
+          </li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <div class="empty-state">
+        <p>아직 활동 기록이 없습니다.</p>
+      </div>
+    {% endif %}
+  </section>
+
+</div>
+{% endblock %}

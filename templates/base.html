@@ -1,0 +1,132 @@
+{# NEW: Base layout template for StudyMate AI – sidebar + topbar shared across all pages #}
+<!DOCTYPE html>
+<html lang="ko" data-theme="light">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{% block title %}StudyMate AI{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}" />
+  {% block head %}{% endblock %}
+</head>
+<body>
+<div class="app-shell">
+
+  <!-- ── Sidebar ──────────────────────────────────────────────────────────── -->
+  <aside class="sidebar" id="sidebar" aria-label="주요 메뉴">
+    <div class="sidebar__brand">
+      <span class="sidebar__logo" aria-hidden="true">📚</span>
+      <span class="sidebar__name">StudyMate AI</span>
+    </div>
+
+    <nav class="sidebar__nav" aria-label="사이드바 내비게이션">
+      <a href="{{ url_for('home') }}"
+         class="nav-item {% if request.endpoint == 'home' %}nav-item--active{% endif %}"
+         aria-current="{% if request.endpoint == 'home' %}page{% endif %}">
+        <span class="nav-item__icon" aria-hidden="true">🏠</span>
+        <span class="nav-item__label">홈</span>
+      </a>
+      <a href="{{ url_for('upload_page') }}"
+         class="nav-item {% if request.endpoint == 'upload_page' %}nav-item--active{% endif %}"
+         aria-current="{% if request.endpoint == 'upload_page' %}page{% endif %}">
+        <span class="nav-item__icon" aria-hidden="true">📤</span>
+        <span class="nav-item__label">자료 업로드</span>
+      </a>
+      <a href="{{ url_for('notes_page') }}"
+         class="nav-item {% if request.endpoint in ('notes_page','note_detail') %}nav-item--active{% endif %}"
+         aria-current="{% if request.endpoint in ('notes_page','note_detail') %}page{% endif %}">
+        <span class="nav-item__icon" aria-hidden="true">📝</span>
+        <span class="nav-item__label">요약 노트</span>
+      </a>
+      <a href="{{ url_for('quizzes_page') }}"
+         class="nav-item {% if request.endpoint in ('quizzes_page','quiz_detail') %}nav-item--active{% endif %}"
+         aria-current="{% if request.endpoint in ('quizzes_page','quiz_detail') %}page{% endif %}">
+        <span class="nav-item__icon" aria-hidden="true">❓</span>
+        <span class="nav-item__label">예상 문제</span>
+      </a>
+      <a href="{{ url_for('materials_page') }}"
+         class="nav-item {% if request.endpoint == 'materials_page' %}nav-item--active{% endif %}"
+         aria-current="{% if request.endpoint == 'materials_page' %}page{% endif %}">
+        <span class="nav-item__icon" aria-hidden="true">📁</span>
+        <span class="nav-item__label">자료 관리</span>
+      </a>
+      <a href="{{ url_for('profile_page') }}"
+         class="nav-item {% if request.endpoint == 'profile_page' %}nav-item--active{% endif %}"
+         aria-current="{% if request.endpoint == 'profile_page' %}page{% endif %}">
+        <span class="nav-item__icon" aria-hidden="true">⚙️</span>
+        <span class="nav-item__label">개인 설정</span>
+      </a>
+    </nav>
+
+    <div class="sidebar__footer">
+      <div class="user-pill">
+        {% if current_user.avatar_url %}
+          <img src="{{ current_user.avatar_url }}" alt="프로필 사진" class="user-pill__avatar" />
+        {% else %}
+          <span class="user-pill__avatar user-pill__avatar--placeholder" aria-hidden="true">👤</span>
+        {% endif %}
+        <span class="user-pill__name">{{ current_user.name }}</span>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ── Main area ─────────────────────────────────────────────────────────── -->
+  <div class="main-area">
+
+    <!-- Top bar -->
+    <header class="topbar" role="banner">
+      <button class="sidebar-toggle icon-btn" id="sidebarToggle"
+              aria-label="사이드바 열기/닫기" aria-expanded="false" aria-controls="sidebar">
+        ☰
+      </button>
+      <span class="topbar__brand">
+        <span aria-hidden="true">📚</span> StudyMate AI
+      </span>
+      <div class="topbar__actions">
+        <button id="themeToggle" class="icon-btn" title="다크모드 전환" aria-label="다크모드 전환">🌙</button>
+        <div class="profile-menu" role="navigation" aria-label="사용자 메뉴">
+          <button class="profile-btn icon-btn" id="profileMenuBtn"
+                  aria-haspopup="true" aria-expanded="false" aria-label="사용자 메뉴 열기">
+            {% if current_user.avatar_url %}
+              <img src="{{ current_user.avatar_url }}" alt="프로필" class="topbar-avatar" />
+            {% else %}
+              👤
+            {% endif %}
+          </button>
+          <div class="profile-dropdown" id="profileDropdown" role="menu" hidden>
+            <div class="profile-dropdown__info">
+              <strong>{{ current_user.name }}</strong>
+              <span>{{ current_user.email }}</span>
+            </div>
+            <hr class="profile-dropdown__divider" />
+            <a href="{{ url_for('profile_page') }}" class="profile-dropdown__item" role="menuitem">⚙️ 개인 설정</a>
+            <a href="{{ url_for('auth.logout') }}" class="profile-dropdown__item profile-dropdown__item--danger" role="menuitem">🚪 로그아웃</a>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <!-- Flash messages -->
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        <div class="flash-messages" aria-live="polite">
+          {% for category, message in messages %}
+            <div class="flash flash--{{ category }}" role="alert">{{ message }}</div>
+          {% endfor %}
+        </div>
+      {% endif %}
+    {% endwith %}
+
+    <!-- Page content -->
+    <main class="page-content" id="main-content">
+      {% block content %}{% endblock %}
+    </main>
+
+  </div><!-- /main-area -->
+
+</div><!-- /app-shell -->
+
+<script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

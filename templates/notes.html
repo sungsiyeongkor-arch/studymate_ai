@@ -1,0 +1,106 @@
+{# NEW: 요약 노트 목록 page #}
+{% extends "base.html" %}
+{% block title %}요약 노트 — StudyMate AI{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1 class="page-title">요약 노트</h1>
+  <p class="page-subtitle">AI가 생성한 구조화된 학습 노트 모음</p>
+</div>
+
+<div class="two-col-layout">
+
+  <!-- Main notes area -->
+  <div class="notes-main">
+    <!-- Search + controls bar -->
+    <div class="list-controls">
+      <form method="get" action="{{ url_for('notes_page') }}" class="search-form" role="search">
+        <input type="search" name="q" value="{{ q }}" placeholder="노트 검색…"
+               class="search-input" aria-label="노트 검색" />
+        <button type="submit" class="btn btn--primary btn--sm">검색</button>
+        <select name="sort" class="sort-select" onchange="this.form.submit()" aria-label="정렬 기준">
+          <option value="newest" {% if sort == 'newest' %}selected{% endif %}>최신순</option>
+          <option value="oldest" {% if sort == 'oldest' %}selected{% endif %}>오래된순</option>
+        </select>
+      </form>
+      <a href="{{ url_for('upload_page') }}" class="btn btn--primary">
+        + 새 요약 노트
+      </a>
+    </div>
+
+    {% if notes %}
+      <div class="notes-grid" aria-label="요약 노트 목록">
+        {% for note in notes %}
+          <article class="note-card">
+            <a href="{{ url_for('note_detail', note_id=note.id) }}" class="note-card__link">
+              <div class="note-card__header">
+                <span class="note-card__icon" aria-hidden="true">📝</span>
+                <h2 class="note-card__title">{{ note.title }}</h2>
+              </div>
+              <p class="note-card__meta">
+                {{ note.created_at.strftime('%Y.%m.%d') }}
+                {% if note.material %}· {{ note.material.name }}{% endif %}
+              </p>
+            </a>
+            <div class="note-card__actions">
+              <button class="btn-icon-danger" data-action="delete-note" data-id="{{ note.id }}"
+                      aria-label="노트 삭제">🗑️</button>
+            </div>
+          </article>
+        {% endfor %}
+      </div>
+    {% elif q %}
+      <div class="empty-state">
+        <p>«{{ q }}»에 해당하는 노트가 없습니다.</p>
+        <a href="{{ url_for('notes_page') }}" class="btn btn--secondary btn--sm">전체 보기</a>
+      </div>
+    {% else %}
+      <div class="empty-state">
+        <span class="empty-state__icon" aria-hidden="true">📝</span>
+        <p>아직 요약 노트가 없습니다.</p>
+        <a href="{{ url_for('upload_page') }}" class="btn btn--primary btn--sm">첫 노트 만들기</a>
+      </div>
+    {% endif %}
+  </div>
+
+  <!-- Recent notes panel -->
+  <aside class="panel" aria-label="최근 요약 노트">
+    <div class="panel__header">
+      <h2 class="panel__title">최근 요약 노트</h2>
+    </div>
+    {% if recent %}
+      <ul class="recent-list">
+        {% for note in recent %}
+          <li class="recent-item">
+            <span class="recent-item__icon" aria-hidden="true">📝</span>
+            <div class="recent-item__body">
+              <a href="{{ url_for('note_detail', note_id=note.id) }}" class="recent-item__name">
+                {{ note.title }}
+              </a>
+              <span class="recent-item__meta">{{ note.updated_at.strftime('%Y.%m.%d') }}</span>
+            </div>
+          </li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <div class="empty-state empty-state--sm"><p>없음</p></div>
+    {% endif %}
+  </aside>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+'use strict';
+document.querySelectorAll('[data-action="delete-note"]').forEach(btn => {
+  btn.addEventListener('click', async () => {
+    if (!confirm('이 노트를 삭제하시겠습니까?')) return;
+    const id = btn.dataset.id;
+    const res = await fetch(`/api/notes/${id}`, { method: 'DELETE' });
+    if (res.ok) { btn.closest('.note-card').remove(); }
+    else { alert('삭제 중 오류가 발생했습니다.'); }
+  });
+});
+</script>
+{% endblock %}
