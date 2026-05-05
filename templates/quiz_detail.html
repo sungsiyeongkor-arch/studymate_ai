@@ -64,7 +64,13 @@ function buildQuiz() {
 
     const qEl = document.createElement('div');
     qEl.className = 'quiz-card__question';
-    qEl.innerHTML = `<span class="q-num">Q${idx + 1}.</span> ${q.question}`;
+    // NEW: begin – use DOM construction to avoid XSS (no innerHTML with user data)
+    const numSpan = document.createElement('span');
+    numSpan.className = 'q-num';
+    numSpan.textContent = `Q${idx + 1}.`;
+    qEl.appendChild(numSpan);
+    qEl.appendChild(document.createTextNode(' ' + q.question));
+    // NEW: end
     card.appendChild(qEl);
 
     const optsEl = document.createElement('div');
