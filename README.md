@@ -1,6 +1,7 @@
 # StudyMate AI 📚
 
 AI 기반 PDF 학습 보조 도구입니다.  
+PDF 파일을 업로드하면 ChatGPT가 내용을 **요약**하고 **핵심 포인트**를 추출해 드립니다.
 PDF 파일을 업로드하면 ChatGPT가 내용을 **요약**하고 **핵심 포인트**를 추출하거나 **퀴즈**를 생성해 드립니다.
 
 ---
@@ -39,6 +40,7 @@ PDF 파일을 업로드하면 ChatGPT가 내용을 **요약**하고 **핵심 포
 
 - **백엔드**: Python 3.10+ / Flask
 - **PDF 처리**: pdfplumber
+- **AI**: OpenAI ChatGPT API (`gpt-4o-mini`)
 - **AI**: OpenAI ChatGPT API (`gpt-4o-mini`, 모델 변경 가능)
 - **프론트엔드**: HTML / CSS / Vanilla JavaScript (Flask 템플릿으로 제공)
 
@@ -120,6 +122,9 @@ studymate_ai/
 │   └── index.html       # 프론트엔드 UI
 └── static/
     ├── css/
+    │   └── style.css
+    └── js/
+        └── main.js
     │   └── style.css    # 스타일 (CSS 커스텀 프로퍼티 기반 테마)
     └── js/
         └── main.js      # 프론트엔드 로직
@@ -130,6 +135,21 @@ studymate_ai/
 ## API 엔드포인트
 
 ### `GET /`
+메인 페이지를 반환합니다.
+
+### `POST /analyze`
+PDF 파일을 분석하여 요약 및 핵심 포인트를 반환합니다.
+
+**Request**: `multipart/form-data` — `file` 필드에 PDF 파일
+
+**Response (200 OK)**:
+```json
+{
+  "summary": "문서의 핵심 내용 요약...",
+  "key_points": [
+    "핵심 포인트 1",
+    "핵심 포인트 2",
+    "..."
 
 메인 페이지를 반환합니다.
 
