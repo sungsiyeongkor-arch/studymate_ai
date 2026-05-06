@@ -2,7 +2,28 @@
 
 AI 기반 PDF 학습 보조 플랫폼입니다.  
 PDF를 업로드하면 AI가 **구조화된 요약 노트**(키워드·의미·비교표 포함)와 **예상 문제**를 자동으로 생성합니다.  
-Google 계정으로 로그인하면 모든 데이터가 계정에 저장되어 언제든 다시 확인할 수 있습니다.
+Google 계정 또는 이메일로 로그인하면 모든 데이터가 계정에 저장되어 언제든 다시 확인할 수 있습니다.
+
+---
+
+## ⚡ 빠른 시작 (3단계)
+
+```bash
+# 1. 저장소 클론
+git clone https://github.com/sungsiyeongkor-arch/studymate_ai.git
+cd studymate_ai
+
+# 2. 의존성 설치 (Python 3.10+ 필요)
+pip install -r requirements.txt
+
+# 3. 환경 변수 설정 후 서버 실행
+cp .env.example .env
+# .env 파일을 열어 OPENAI_API_KEY 를 입력하세요
+python app.py
+```
+
+브라우저에서 **http://localhost:5000** 을 열고, 이메일 주소를 입력해 바로 로그인하세요.  
+> Google OAuth나 별도 DB 설정 없이도 바로 사용할 수 있습니다.
 
 ---
 
@@ -76,7 +97,7 @@ GOOGLE_CLIENT_ID=your_google_client_id
 GOOGLE_CLIENT_SECRET=your_google_client_secret
 ```
 
-> **Google OAuth를 설정하지 않으면** 로그인 페이지에서 경고가 표시됩니다.  
+> **Google OAuth를 설정하지 않아도** 이메일 로그인으로 바로 사용할 수 있습니다.  
 > OpenAI API 키가 없어도 앱은 실행되나 AI 분석 기능이 비활성화됩니다.
 
 ### 5. 서버 실행

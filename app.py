@@ -12,7 +12,7 @@ from flask import (
     redirect, url_for, flash, send_from_directory,
 )
 from flask_login import (
-    LoginManager, login_required, current_user,
+    LoginManager, login_required, login_user, logout_user, current_user,
 )
 from openai import OpenAI
 from dotenv import load_dotenv
@@ -245,6 +245,49 @@ def log_activity(user_id: str, action: str, resource_type: str,
 # NEW: end
 
 
+# NEW: begin – seed demo data for new dev-login users
+def _seed_demo_data(user: User):
+    """Create lightweight placeholder data so the dashboard isn't empty on first login."""
+    try:
+        folder = Folder(user_id=user.id, name="샘플 자료", color="#4f46e5")
+        db.session.add(folder)
+        db.session.flush()
+
+        sample_note_content = {
+            "title": "샘플 요약 노트",
+            "overview": "이것은 StudyMate AI가 생성한 샘플 요약 노트입니다. 실제 PDF를 업로드하면 AI가 키워드, 의미, 관련 내용을 포함한 구조화된 노트를 생성합니다.",
+            "keywords": [
+                {"term": "요약 노트", "meaning": "핵심 내용을 구조화된 형태로 정리한 학습 자료", "related": ["키워드", "개요", "학습"]},
+                {"term": "AI 분석", "meaning": "인공지능이 문서를 자동으로 분석하고 중요 내용을 추출하는 기능", "related": ["GPT", "자연어처리", "자동화"]},
+            ],
+            "sections": [
+                {"title": "StudyMate AI 사용 방법", "type": "list",
+                 "content": ["PDF 파일을 자료 업로드 페이지에서 업로드하세요.", "AI가 자동으로 요약 노트를 생성합니다.", "생성된 노트는 요약 노트 메뉴에서 확인할 수 있습니다."]},
+                {"title": "주요 기능", "type": "table",
+                 "content": {"headers": ["기능", "설명"], "rows": [
+                     ["요약 노트", "AI가 문서를 분석해 키워드·의미·관련 내용을 포함한 노트 생성"],
+                     ["예상 문제", "업로드한 자료를 기반으로 객관식 문제 자동 생성"],
+                     ["자료 관리", "폴더별로 학습 자료를 정리하고 관리"],
+                 ]}},
+            ],
+            "key_takeaways": ["PDF를 업로드하면 AI가 자동으로 학습 노트를 만들어 줍니다.", "키워드와 의미, 관련 내용이 포함된 구조화된 노트를 받을 수 있습니다."],
+        }
+
+        note = SummaryNote(
+            user_id=user.id,
+            title="샘플 요약 노트",
+            content=json.dumps(sample_note_content, ensure_ascii=False),
+        )
+        db.session.add(note)
+        db.session.flush()
+        log_activity(user.id, "create", "note", note.id, note.title)
+        db.session.commit()
+    except Exception as exc:
+        logger.warning("Seed data failed: %s", exc)
+        db.session.rollback()
+# NEW: end
+
+
 # ── Routes: public ─────────────────────────────────────────────────────────────
 @app.route("/login")
 def login_page():
@@ -254,6 +297,34 @@ def login_page():
         os.environ.get("GOOGLE_CLIENT_ID") and os.environ.get("GOOGLE_CLIENT_SECRET")
     )
     return render_template("login.html", google_configured=google_configured)
+
+
+# NEW: begin – dev/demo login (no OAuth needed; for local dev and demo environments)
+@app.route("/login/dev", methods=["POST"])
+def dev_login():
+    """Quick login for development / demo — creates or retrieves a user by email."""
+    if current_user.is_authenticated:
+        return redirect(url_for("home"))
+
+    name  = (request.form.get("name") or "").strip()
+    email = (request.form.get("email") or "").strip().lower()
+
+    if not email or "@" not in email:
+        flash("올바른 이메일 주소를 입력해 주세요.", "error")
+        return redirect(url_for("login_page"))
+    if not name:
+        name = email.split("@")[0]
+
+    user = User.query.filter_by(email=email).first()
+    if user is None:
+        user = User(email=email, name=name)
+        db.session.add(user)
+        db.session.commit()
+        _seed_demo_data(user)
+
+    login_user(user, remember=True)
+    return redirect(url_for("home"))
+# NEW: end
 
 
 # NEW: begin – multi-page dashboard routes
