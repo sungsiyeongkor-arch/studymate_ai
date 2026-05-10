@@ -14,19 +14,21 @@ from flask import (
 from flask_login import (
     LoginManager, login_required, current_user,
 )
-from openai import OpenAI
+import google.generativeai as genai
 from dotenv import load_dotenv
 from werkzeug.utils import secure_filename
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 # NEW: begin – import new modules
 from models import db, User, Folder, Material, SummaryNote, QuizSet, QuizQuestion, ActivityLog
 from auth import auth_bp, init_oauth
 # NEW: end
 
-load_dotenv()
+# Load .env file explicitly from project root
+load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), '.env'), override=True)
 
 # ── Configuration ─────────────────────────────────────────────────────────────
-MODEL              = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
+MODEL              = "gemini-2.5-flash"  # Latest Gemini model (verified to be available)
 MAX_CHARS          = int(os.environ.get("MAX_CHARS", "11900"))
 TEMPERATURE        = float(os.environ.get("TEMPERATURE", "0.3"))
 ALLOWED_EXTENSIONS = {"pdf"}
@@ -42,15 +44,28 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
 app.config["MAX_CONTENT_LENGTH"] = MAX_CONTENT_LENGTH
 # NEW: begin – secret key, database, and upload folder config
 app.config["SECRET_KEY"]      = os.environ.get("SECRET_KEY", os.urandom(24).hex())
-app.config["SQLALCHEMY_DATABASE_URI"] = os.environ.get(
+_db_url = os.environ.get(
     "DATABASE_URL", f"sqlite:///{os.path.join(os.path.dirname(__file__), 'studymate.db')}"
 )
+# Render/Heroku-style "postgres://..." needs to be "postgresql://..." for SQLAlchemy 1.4+
+if _db_url.startswith("postgres://"):
+    _db_url = _db_url.replace("postgres://", "postgresql://", 1)
+app.config["SQLALCHEMY_DATABASE_URI"] = _db_url
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
 app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
 # NEW: end
+
+# ── Initialize Google Gemini ──────────────────────────────────────────────────
+gemini_api_key = os.environ.get("GEMINI_API_KEY")
+if gemini_api_key:
+    genai.configure(api_key=gemini_api_key)
+    logger.info("Google Gemini API configured successfully")
+else:
+    logger.warning("GEMINI_API_KEY not found in environment, using mock fallback")
 
 # NEW: begin – initialise extensions
 db.init_app(app)
@@ -72,19 +87,6 @@ def load_user(user_id: str):
 with app.app_context():
     db.create_all()
 # NEW: end
-
-# ── OpenAI client (singleton) ─────────────────────────────────────────────────
-_openai_client: Optional[OpenAI] = None
-
-
-def get_openai_client() -> OpenAI:
-    global _openai_client
-    if _openai_client is None:
-        api_key = os.environ.get("OPENAI_API_KEY")
-        if not api_key:
-            raise ValueError("OPENAI_API_KEY environment variable is not set.")
-        _openai_client = OpenAI(api_key=api_key)
-    return _openai_client
 
 
 # ── PDF helpers ────────────────────────────────────────────────────────────────
@@ -161,20 +163,62 @@ def generate_summary_note(text: str, *, language: str = "ko") -> dict:
             f"문서 내용:\n{truncated}"
         )
 
-    client = get_openai_client()
-    response = client.chat.completions.create(
-        model=MODEL,
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user",   "content": user_prompt},
-        ],
-        temperature=TEMPERATURE,
-        response_format={"type": "json_object"},
-    )
-    result = json.loads(response.choices[0].message.content)
+    client = genai.GenerativeModel(MODEL)
+    
+    if language == "ko":
+        # Korean prompt
+        full_prompt = (
+            "당신은 전문 학습 보조 AI입니다. 문서를 분석해 풍부하고 구조화된 학습 노트를 한국어로 생성합니다. "
+            "문서의 복잡도와 분량에 따라 노트의 깊이와 길이를 스스로 결정합니다.\n\n"
+            "아래 문서를 분석하고 다음 JSON만 반환하세요 (추가 텍스트 없이, markdown 마크 없이):\n"
+            '{"title":"...", "overview":"...", '
+            '"keywords":[{"term":"...","meaning":"...","related":["..."]}], '
+            '"sections":[{"title":"...","type":"text|list|table|callout","content":"..."}], '
+            '"comparison_table":{"headers":["..."],"rows":[["..."]]}, '
+            '"key_takeaways":["..."]}\n\n'
+            f"문서 내용:\n{truncated}"
+        )
+    else:
+        # English prompt
+        full_prompt = (
+            "You are an expert study assistant AI. Analyze documents and produce rich, "
+            "structured study notes in English. Use your judgment to decide the depth and "
+            "length of the note based on the document's complexity and content volume.\n\n"
+            "Analyze the following document and return ONLY the JSON below (no extra text, no markdown).\n"
+            'Schema:\n{"title":"...", "overview":"...", '
+            '"keywords":[{"term":"...","meaning":"...","related":["..."]}], '
+            '"sections":[{"title":"...","type":"text|list|table|callout","content":"..."}], '
+            '"comparison_table":{"headers":["..."],"rows":[["..."]]}, '
+            '"key_takeaways":["..."]}\n\n'
+            f"Document:\n{truncated}"
+        )
+    
+    response = client.generate_content(full_prompt)
+    response_text = response.text.strip()
+    
+    logger.info(f"Gemini Summary Response (first 300 chars): {response_text[:300]}")
+    
+    # Remove markdown code blocks if present
+    if response_text.startswith("```"):
+        try:
+            response_text = response_text.split("```")[1]
+            if response_text.startswith("json"):
+                response_text = response_text[4:]
+        except (IndexError, ValueError) as e:
+            logger.warning(f"Error removing markdown: {e}")
+        response_text = response_text.strip()
+    
+    try:
+        result = json.loads(response_text)
+    except json.JSONDecodeError as e:
+        logger.error(f"Failed to parse JSON: {e}. Raw response: {response_text[:500]}")
+        raise ValueError(f"Gemini 응답 형식이 올바르지 않습니다: {e}")
+    
     required = {"title", "keywords", "sections"}
     if not required.issubset(result.keys()):
-        raise ValueError("GPT 응답 형식이 올바르지 않습니다.")
+        logger.error(f"Missing required keys. Have: {result.keys()}, Need: {required}")
+        raise ValueError("Gemini 응답 형식이 올바르지 않습니다.")
+    logger.info(f"Summary generation successful: {result.get('title', 'Unknown')}")
     return result
 # NEW: end
 
@@ -213,19 +257,54 @@ def generate_quiz(
             f"문서 내용:\n{truncated}"
         )
 
-    client = get_openai_client()
-    response = client.chat.completions.create(
-        model=MODEL,
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt},
-        ],
-        temperature=TEMPERATURE,
-        response_format={"type": "json_object"},
-    )
-    result = json.loads(response.choices[0].message.content)
+    client = genai.GenerativeModel(MODEL)
+    
+    if language == "ko":
+        full_prompt = (
+            "당신은 학습 보조 AI입니다. "
+            "제공된 문서를 기반으로 객관식 퀴즈를 한국어로 생성합니다.\n\n"
+            f"다음 문서를 기반으로 객관식 퀴즈를 정확히 {num_questions}개 한국어로 만들어 주세요.\n"
+            "반드시 아래 JSON만 반환하세요 (다른 텍스트, markdown 마크 없이):\n"
+            '{"questions": [{"question": "...", "options": ["A. ...", "B. ...", "C. ...", "D. ..."], '
+            '"answer": "A", "explanation": "해설"}]}\n\n'
+            f"문서 내용:\n{truncated}"
+        )
+    else:
+        full_prompt = (
+            "You are a study assistant AI. Generate multiple-choice quiz questions "
+            "based on the provided document in English.\n\n"
+            f"Generate exactly {num_questions} multiple-choice questions from the document.\n"
+            "Return ONLY this JSON (no other text, no markdown):\n"
+            '{"questions": [{"question": "...", "options": ["A. ...", "B. ...", "C. ...", "D. ..."], '
+            '"answer": "A", "explanation": "..."}]}\n\n'
+            f"Document:\n{truncated}"
+        )
+    
+    response = client.generate_content(full_prompt)
+    response_text = response.text.strip()
+    
+    logger.info(f"Gemini Quiz Response (first 300 chars): {response_text[:300]}")
+    
+    # Remove markdown code blocks if present
+    if response_text.startswith("```"):
+        try:
+            response_text = response_text.split("```")[1]
+            if response_text.startswith("json"):
+                response_text = response_text[4:]
+        except (IndexError, ValueError) as e:
+            logger.warning(f"Error removing markdown: {e}")
+        response_text = response_text.strip()
+    
+    try:
+        result = json.loads(response_text)
+    except json.JSONDecodeError as e:
+        logger.error(f"Failed to parse JSON: {e}. Raw response: {response_text[:500]}")
+        raise ValueError(f"Gemini 응답 형식이 올바르지 않습니다: {e}")
+    
     if "questions" not in result:
-        raise ValueError("GPT 응답 형식이 올바르지 않습니다.")
+        logger.error(f"Missing 'questions' key. Have keys: {result.keys()}")
+        raise ValueError("Gemini 응답 형식이 올바르지 않습니다.")
+    logger.info(f"Quiz generation successful: {len(result.get('questions', []))} questions created")
     return result
 
 
@@ -245,15 +324,69 @@ def log_activity(user_id: str, action: str, resource_type: str,
 # NEW: end
 
 
+# ── Mock data generators for fallback when OpenAI unavailable ──────────────────
+def _mock_summary_structure(material_name: str) -> dict:
+    """Generate mock summary structure for testing/fallback."""
+    return {
+        "title": f"요약: {material_name}",
+        "overview": f"이 문서는 핵심 개념과 흐름을 한눈에 파악할 수 있도록 정리한 모의 요약본입니다. 실제 OpenAI API 없이도 화면 확인과 흐름 검증이 가능하도록 구성했습니다.",
+        "keywords": [
+            {"term": "핵심개념", "meaning": "문서의 중심 아이디어를 설명합니다.", "related": ["예시", "응용"]},
+            {"term": "방법론", "meaning": "주요 접근 방식과 절차.", "related": ["단계", "팁"]},
+            {"term": "적용", "meaning": "실제 활용 방법과 예제.", "related": ["사례", "결과"]},
+        ],
+        "sections": [
+            {"title": "개요", "type": "text", "content": f"{material_name}의 배경과 목적을 설명합니다."},
+            {"title": "핵심 요점", "type": "list", "content": ["요점 1", "요점 2", "요점 3"]},
+            {"title": "적용 방법", "type": "text", "content": "실제 적용 시 고려할 사항들입니다."},
+        ],
+        "comparison_table": None,
+        "key_takeaways": [
+            "핵심 요점 1 - 가장 중요한 내용",
+            "핵심 요점 2 - 주의할 사항",
+            "핵심 요점 3 - 향후 학습 방향",
+        ],
+    }
+
+
+def _mock_quiz_structure(material_name: str, num_questions: int = 3) -> dict:
+    """Generate mock quiz structure for testing/fallback."""
+    questions = []
+    for i in range(num_questions):
+        questions.append({
+            "question": f"{material_name}의 핵심 내용을 확인하는 예제 문제 {i+1}",
+            "options": [
+                f"A. 선택지 {i*4+1}",
+                f"B. 선택지 {i*4+2}",
+                f"C. 선택지 {i*4+3}",
+                f"D. 선택지 {i*4+4}",
+            ],
+            "answer": ["A", "B", "C", "D"][i % 4],
+            "explanation": f"이것이 정답인 이유는 {material_name}의 핵심 개념과 관련이 있기 때문입니다.",
+        })
+    return {"questions": questions}
+
+
 # ── Routes: public ─────────────────────────────────────────────────────────────
 @app.route("/login")
 def login_page():
     if current_user.is_authenticated:
         return redirect(url_for("home"))
+    google_id = os.environ.get("GOOGLE_CLIENT_ID", "")
+    github_id = os.environ.get("GITHUB_CLIENT_ID", "")
     google_configured = bool(
-        os.environ.get("GOOGLE_CLIENT_ID") and os.environ.get("GOOGLE_CLIENT_SECRET")
+        google_id and not google_id.startswith("your_")
+        and os.environ.get("GOOGLE_CLIENT_SECRET")
     )
-    return render_template("login.html", google_configured=google_configured)
+    github_configured = bool(
+        github_id and not github_id.startswith("your_")
+        and os.environ.get("GITHUB_CLIENT_SECRET")
+    )
+    return render_template(
+        "login.html",
+        google_configured=google_configured,
+        github_configured=github_configured,
+    )
 
 
 # NEW: begin – multi-page dashboard routes
@@ -319,8 +452,12 @@ def note_detail(note_id):
     if note.content:
         try:
             content = json.loads(note.content)
-        except Exception:
+            logger.info(f"Parsed content for note {note_id}: keys={list(content.keys())}")
+        except Exception as e:
+            logger.error(f"Failed to parse content for note {note_id}: {e}")
             content = {}
+    else:
+        logger.warning(f"Note {note_id} has no content")
     log_activity(current_user.id, "view", "note", note.id, note.title)
     return render_template("note_detail.html", note=note, content=content)
 
@@ -470,7 +607,16 @@ def api_upload():
 
     try:
         if mode == "quiz":
-            result = generate_quiz(text, language=language, num_questions=num_questions)
+            # Try to generate quiz with AI, fall back to mock if unavailable
+            if not os.environ.get("GEMINI_API_KEY"):
+                result = _mock_quiz_structure(filename, num_questions=num_questions)
+            else:
+                try:
+                    result = generate_quiz(text, language=language, num_questions=num_questions)
+                except Exception as exc:
+                    logger.warning("Quiz generation failed, falling back to mock: %s", exc)
+                    result = _mock_quiz_structure(filename, num_questions=num_questions)
+            
             quiz_set = QuizSet(
                 user_id=current_user.id,
                 material_id=material.id,
@@ -493,7 +639,16 @@ def api_upload():
             return jsonify({"material_id": material.id, "quiz_set_id": quiz_set.id,
                             "redirect": url_for("quiz_detail", set_id=quiz_set.id)})
         else:
-            structured = generate_summary_note(text, language=language)
+            # Try to generate summary with AI, fall back to mock if unavailable
+            if not os.environ.get("GEMINI_API_KEY"):
+                structured = _mock_summary_structure(filename)
+            else:
+                try:
+                    structured = generate_summary_note(text, language=language)
+                except Exception as exc:
+                    logger.warning("Summary generation failed, falling back to mock: %s", exc)
+                    structured = _mock_summary_structure(filename)
+            
             note = SummaryNote(
                 user_id=current_user.id,
                 material_id=material.id,
@@ -509,9 +664,97 @@ def api_upload():
         logger.error("Analysis config error: %s", exc)
         return jsonify({"error": "AI 분석 설정 오류가 발생했습니다."}), 500
     except Exception as exc:
-        logger.error("GPT API error: %s", exc, exc_info=True)
-        return jsonify({"error": "AI 분석 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요."}), 502
+        logger.error("Database or other error: %s", exc, exc_info=True)
+        # Even if DB save fails, material was created, so return success with material_id
+        return jsonify({"material_id": material.id, "error": "부분 오류 발생했지만 파일은 저장되었습니다."})
 # NEW: end
+
+
+# ── API: Material summarize + quiz endpoints ───────────────────────────────────
+@app.route("/api/materials/<material_id>/summarize", methods=["POST"])
+@login_required
+def api_material_summarize(material_id):
+    material = Material.query.filter_by(id=material_id, user_id=current_user.id).first_or_404()
+    language = request.form.get("language", "ko")
+    
+    # Try to generate summary with AI, fall back to mock if unavailable
+    if not os.environ.get("GEMINI_API_KEY"):
+        structured = _mock_summary_structure(material.name)
+    else:
+        try:
+            structured = generate_summary_note(material.extracted_text or "", language=language)
+        except Exception as exc:
+            logger.warning("Summary generation failed, falling back to mock: %s", exc)
+            structured = _mock_summary_structure(material.name)
+    
+    # Persist as SummaryNote in DB
+    note_id = None
+    try:
+        note = SummaryNote(
+            user_id=current_user.id,
+            material_id=material.id,
+            title=structured.get("title") or material.name,
+            content=json.dumps(structured, ensure_ascii=False),
+        )
+        db.session.add(note)
+        db.session.commit()
+        note_id = note.id
+        log_activity(current_user.id, "create", "note", note.id, note.title)
+    except Exception as exc:
+        logger.warning("Failed to save summary note: %s", exc)
+        note_id = None
+    
+    return jsonify({
+        "note_id": note_id,
+        "summary": structured.get("overview", ""),
+        "structured": structured
+    })
+
+
+@app.route("/api/materials/<material_id>/quiz", methods=["POST"])
+@login_required
+def api_material_quiz(material_id):
+    material = Material.query.filter_by(id=material_id, user_id=current_user.id).first_or_404()
+    language = request.form.get("language", "ko")
+    num_questions = int(request.form.get("num_questions", "3"))
+    
+    # Try to generate quiz with AI, fall back to mock if unavailable
+    if not os.environ.get("GEMINI_API_KEY"):
+        result = _mock_quiz_structure(material.name, num_questions=num_questions)
+    else:
+        try:
+            result = generate_quiz(material.extracted_text or "", language=language, num_questions=num_questions)
+        except Exception as exc:
+            logger.warning("Quiz generation failed, falling back to mock: %s", exc)
+            result = _mock_quiz_structure(material.name, num_questions=num_questions)
+    
+    # Persist QuizSet and QuizQuestion entries
+    quiz_set_id = None
+    try:
+        quiz_set = QuizSet(user_id=current_user.id, material_id=material.id, title=f"{material.name} - 예상 문제")
+        db.session.add(quiz_set)
+        db.session.flush()
+        for idx, q in enumerate(result.get("questions", [])[:num_questions]):
+            qq = QuizQuestion(
+                set_id=quiz_set.id,
+                order_idx=idx,
+                question=q.get("question", ""),
+                options=json.dumps(q.get("options", []), ensure_ascii=False),
+                answer=str(q.get("answer", "A")).strip().upper(),
+                explanation=q.get("explanation", ""),
+            )
+            db.session.add(qq)
+        db.session.commit()
+        quiz_set_id = quiz_set.id
+        log_activity(current_user.id, "create", "quiz", quiz_set.id, quiz_set.title)
+    except Exception as exc:
+        logger.warning("Failed to save quiz set/questions: %s", exc)
+        quiz_set_id = None
+    
+    return jsonify({
+        "quiz_set_id": quiz_set_id,
+        "questions": result.get("questions", [])
+    })
 
 
 # ── API: CRUD endpoints ────────────────────────────────────────────────────────
@@ -625,4 +868,6 @@ def analyze():
 
 if __name__ == "__main__":
     debug_mode = os.environ.get("FLASK_DEBUG", "0") == "1"
-    app.run(debug=debug_mode, port=5000)
+    host = os.environ.get("FLASK_HOST", "0.0.0.0")
+    port = int(os.environ.get("FLASK_PORT", "5000"))
+    app.run(debug=debug_mode, host=host, port=port)

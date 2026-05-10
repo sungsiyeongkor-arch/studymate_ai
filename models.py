@@ -24,6 +24,7 @@ class User(UserMixin, db.Model):
 
     id         = db.Column(db.String(36), primary_key=True, default=_uuid)
     google_id  = db.Column(db.String(128), unique=True, nullable=True)
+    github_id  = db.Column(db.String(128), unique=True, nullable=True)
     email      = db.Column(db.String(255), unique=True, nullable=False)
     name       = db.Column(db.String(255), nullable=False)
     avatar_url = db.Column(db.Text, nullable=True)

@@ -34,3 +34,9 @@ uploads/
 *.db-shm
 *.db-wal
 # NEW: end
+
+# Flask instance folder (SQLite, secrets)
+instance/
+
+# Logs
+*.log

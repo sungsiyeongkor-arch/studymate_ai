@@ -18,158 +18,158 @@
 
 <div class="note-viewer">
 
-  {% if content %}
+  {% if content and (content.title or content.overview or content.keywords or content.sections) %}
 
-    <!-- Overview -->
-    <div class="note-section note-section--overview">
-      <h1 class="note-title">{{ content.title or note.title }}</h1>
-      {% if content.overview %}
-        <p class="note-overview">{{ content.overview }}</p>
+  <!-- Overview -->
+  <div class="note-section note-section--overview">
+    <h1 class="note-title">{{ content.title or note.title }}</h1>
+    {% if content.overview %}
+    <p class="note-overview">{{ content.overview }}</p>
+    {% endif %}
+    <div class="note-meta">
+      <span>📅 {{ note.created_at.strftime('%Y년 %m월 %d일') }}</span>
+      {% if note.material %}
+      <span>📄 {{ note.material.name }}</span>
       {% endif %}
-      <div class="note-meta">
-        <span>📅 {{ note.created_at.strftime('%Y년 %m월 %d일') }}</span>
-        {% if note.material %}
-          <span>📄 {{ note.material.name }}</span>
+    </div>
+  </div>
+
+  <!-- Keywords -->
+  {% if content.keywords %}
+  <div class="note-section">
+    <h2 class="note-section__title">🔑 핵심 키워드</h2>
+    <div class="keyword-grid">
+      {% for kw in content.keywords %}
+      <div class="keyword-card">
+        <div class="keyword-card__term">{{ kw.term }}</div>
+        <div class="keyword-card__meaning">{{ kw.meaning }}</div>
+        {% if kw.related %}
+        <div class="keyword-card__related">
+          {% for rel in kw.related %}
+          <span class="tag-chip">{{ rel }}</span>
+          {% endfor %}
+        </div>
         {% endif %}
       </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- Content sections -->
+  {% if content.sections %}
+  {% for section in content.sections %}
+  <div class="note-section note-section--{{ section.type or 'text' }}">
+    <h2 class="note-section__title">{{ section.title }}</h2>
+
+    {% if section.type == 'list' %}
+    <ul class="note-list">
+      {% if section.content is iterable and section.content is not string %}
+      {% for item in section.content %}
+      <li>{{ item }}</li>
+      {% endfor %}
+      {% else %}
+      <li>{{ section.content }}</li>
+      {% endif %}
+    </ul>
+
+    {% elif section.type == 'table' %}
+    {% if section.content is mapping %}
+    <div class="note-table-wrapper">
+      <table class="note-table">
+        {% if section.content.headers %}
+        <thead>
+          <tr>
+            {% for h in section.content.headers %}
+            <th>{{ h }}</th>
+            {% endfor %}
+          </tr>
+        </thead>
+        {% endif %}
+        <tbody>
+          {% for row in section.content.rows or [] %}
+          <tr>
+            {% for cell in row %}
+            <td>{{ cell }}</td>
+            {% endfor %}
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <p class="note-text">{{ section.content }}</p>
+    {% endif %}
+
+    {% elif section.type == 'callout' %}
+    <div class="note-callout">
+      {% if section.content is iterable and section.content is not string %}
+      <ul>{% for item in section.content %}<li>{{ item }}</li>{% endfor %}</ul>
+      {% else %}
+      {{ section.content }}
+      {% endif %}
     </div>
 
-    <!-- Keywords -->
-    {% if content.keywords %}
-      <div class="note-section">
-        <h2 class="note-section__title">🔑 핵심 키워드</h2>
-        <div class="keyword-grid">
-          {% for kw in content.keywords %}
-            <div class="keyword-card">
-              <div class="keyword-card__term">{{ kw.term }}</div>
-              <div class="keyword-card__meaning">{{ kw.meaning }}</div>
-              {% if kw.related %}
-                <div class="keyword-card__related">
-                  {% for rel in kw.related %}
-                    <span class="tag-chip">{{ rel }}</span>
-                  {% endfor %}
-                </div>
-              {% endif %}
-            </div>
-          {% endfor %}
-        </div>
-      </div>
-    {% endif %}
-
-    <!-- Content sections -->
-    {% if content.sections %}
-      {% for section in content.sections %}
-        <div class="note-section note-section--{{ section.type or 'text' }}">
-          <h2 class="note-section__title">{{ section.title }}</h2>
-
-          {% if section.type == 'list' %}
-            <ul class="note-list">
-              {% if section.content is iterable and section.content is not string %}
-                {% for item in section.content %}
-                  <li>{{ item }}</li>
-                {% endfor %}
-              {% else %}
-                <li>{{ section.content }}</li>
-              {% endif %}
-            </ul>
-
-          {% elif section.type == 'table' %}
-            {% if section.content is mapping %}
-              <div class="note-table-wrapper">
-                <table class="note-table">
-                  {% if section.content.headers %}
-                    <thead>
-                      <tr>
-                        {% for h in section.content.headers %}
-                          <th>{{ h }}</th>
-                        {% endfor %}
-                      </tr>
-                    </thead>
-                  {% endif %}
-                  <tbody>
-                    {% for row in section.content.rows or [] %}
-                      <tr>
-                        {% for cell in row %}
-                          <td>{{ cell }}</td>
-                        {% endfor %}
-                      </tr>
-                    {% endfor %}
-                  </tbody>
-                </table>
-              </div>
-            {% else %}
-              <p class="note-text">{{ section.content }}</p>
-            {% endif %}
-
-          {% elif section.type == 'callout' %}
-            <div class="note-callout">
-              {% if section.content is iterable and section.content is not string %}
-                <ul>{% for item in section.content %}<li>{{ item }}</li>{% endfor %}</ul>
-              {% else %}
-                {{ section.content }}
-              {% endif %}
-            </div>
-
-          {% else %}
-            {# type == 'text' or unknown #}
-            {% if section.content is iterable and section.content is not string %}
-              <ul class="note-list">
-                {% for item in section.content %}
-                  <li>{{ item }}</li>
-                {% endfor %}
-              </ul>
-            {% else %}
-              <p class="note-text">{{ section.content }}</p>
-            {% endif %}
-          {% endif %}
-        </div>
+    {% else %}
+    {# type == 'text' or unknown #}
+    {% if section.content is iterable and section.content is not string %}
+    <ul class="note-list">
+      {% for item in section.content %}
+      <li>{{ item }}</li>
       {% endfor %}
+    </ul>
+    {% else %}
+    <p class="note-text">{{ section.content }}</p>
     {% endif %}
-
-    <!-- Comparison table -->
-    {% if content.comparison_table and content.comparison_table.headers %}
-      <div class="note-section">
-        <h2 class="note-section__title">📊 비교표</h2>
-        <div class="note-table-wrapper">
-          <table class="note-table note-table--comparison">
-            <thead>
-              <tr>
-                {% for h in content.comparison_table.headers %}
-                  <th>{{ h }}</th>
-                {% endfor %}
-              </tr>
-            </thead>
-            <tbody>
-              {% for row in content.comparison_table.rows or [] %}
-                <tr>
-                  {% for cell in row %}
-                    <td>{{ cell }}</td>
-                  {% endfor %}
-                </tr>
-              {% endfor %}
-            </tbody>
-          </table>
-        </div>
-      </div>
     {% endif %}
+  </div>
+  {% endfor %}
+  {% endif %}
 
-    <!-- Key takeaways -->
-    {% if content.key_takeaways %}
-      <div class="note-section note-section--takeaways">
-        <h2 class="note-section__title">✅ 핵심 포인트</h2>
-        <ul class="takeaways-list">
-          {% for item in content.key_takeaways %}
-            <li>{{ item }}</li>
+  <!-- Comparison table -->
+  {% if content.comparison_table and content.comparison_table.headers %}
+  <div class="note-section">
+    <h2 class="note-section__title">📊 비교표</h2>
+    <div class="note-table-wrapper">
+      <table class="note-table note-table--comparison">
+        <thead>
+          <tr>
+            {% for h in content.comparison_table.headers %}
+            <th>{{ h }}</th>
+            {% endfor %}
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in content.comparison_table.rows or [] %}
+          <tr>
+            {% for cell in row %}
+            <td>{{ cell }}</td>
+            {% endfor %}
+          </tr>
           {% endfor %}
-        </ul>
-      </div>
-    {% endif %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- Key takeaways -->
+  {% if content.key_takeaways %}
+  <div class="note-section note-section--takeaways">
+    <h2 class="note-section__title">✅ 핵심 포인트</h2>
+    <ul class="takeaways-list">
+      {% for item in content.key_takeaways %}
+      <li>{{ item }}</li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
 
   {% else %}
-    <div class="empty-state">
-      <p>노트 내용을 불러올 수 없습니다.</p>
-      <a href="{{ url_for('notes_page') }}" class="btn btn--secondary btn--sm">목록으로</a>
-    </div>
+  <div class="empty-state">
+    <p>노트 내용을 불러올 수 없습니다.</p>
+    <a href="{{ url_for('notes_page') }}" class="btn btn--secondary btn--sm">목록으로</a>
+  </div>
   {% endif %}
 
 </div><!-- /note-viewer -->
@@ -177,16 +177,16 @@
 
 {% block scripts %}
 <script>
-'use strict';
-const deleteBtn = document.getElementById('deleteNoteBtn');
-if (deleteBtn) {
-  deleteBtn.addEventListener('click', async () => {
-    if (!confirm('이 노트를 삭제하시겠습니까?')) return;
-    const id = deleteBtn.dataset.id;
-    const res = await fetch(`/api/notes/${id}`, { method: 'DELETE' });
-    if (res.ok) { window.location.href = '{{ url_for("notes_page") }}'; }
-    else { alert('삭제 중 오류가 발생했습니다.'); }
-  });
-}
+  'use strict';
+  const deleteBtn = document.getElementById('deleteNoteBtn');
+  if (deleteBtn) {
+    deleteBtn.addEventListener('click', async () => {
+      if (!confirm('이 노트를 삭제하시겠습니까?')) return;
+      const id = deleteBtn.dataset.id;
+      const res = await fetch(`/api/notes/${id}`, { method: 'DELETE' });
+      if (res.ok) { window.location.href = '{{ url_for("notes_page") }}'; }
+      else { alert('삭제 중 오류가 발생했습니다.'); }
+    });
+  }
 </script>
 {% endblock %}
