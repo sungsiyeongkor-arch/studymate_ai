@@ -1,6 +1,7 @@
 databases:
   - name: studymate-db
     plan: free
+    region: oregon
     databaseName: studymate
     user: studymate
 
@@ -9,7 +10,7 @@ services:
     name: studymate-ai
     runtime: python
     plan: free
-    region: singapore
+    region: oregon
     branch: main
     buildCommand: pip install -r requirements.txt
     startCommand: gunicorn app:app --bind 0.0.0.0:$PORT --workers 2 --timeout 120
