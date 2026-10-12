@@ -8,3 +8,5 @@ from . import (
     reviews,
     settings,
 )  # register routes
+
+from . import collections

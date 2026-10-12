@@ -49,3 +49,6 @@ README(1).md
 !.env.example
 *.sqlite*
 .tools/
+
+backups/
+*.dump

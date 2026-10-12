@@ -75,6 +75,6 @@ def listed(model, **filters):
     return [
         public(r)
         for r in model.query.filter_by(user_id=g.user.id, **filters)
-        .order_by(model.created_at.desc())
-        .all()
+        .order_by(model.created_at.desc(), model.id.desc())
+        .limit(50)
     ]

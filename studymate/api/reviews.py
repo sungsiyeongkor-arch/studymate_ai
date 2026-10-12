@@ -1,3 +1,6 @@
+from sqlalchemy import select, tuple_
+from sqlalchemy.orm import aliased
+from ..services.pagination import page
 from .common import (
     Artifact,
     Attempt,
@@ -21,20 +24,16 @@ from .common import (
 @api.route("/cards", methods=["GET", "POST"])
 def cards():
     if request.method == "GET":
-        rows = (
-            Card.query.filter_by(user_id=g.user.id)
-            .order_by(Card.created_at.desc())
-            .all()
-        )
-        return {
-            "items": [
-                {
-                    **public(c),
-                    "review": public(ReviewState.query.filter_by(card_id=c.id).one()),
-                }
-                for c in rows
-            ]
+        batch = page(Card.query.filter_by(user_id=g.user.id), Card, {})
+        ids = [c["id"] for c in batch["items"]]
+        states = {
+            r.card_id: public(r)
+            for r in ReviewState.query.filter(
+                ReviewState.user_id == g.user.id, ReviewState.card_id.in_(ids)
+            )
         }
+        batch["items"] = [{**c, "review": states.get(c["id"])} for c in batch["items"]]
+        return batch
     data = body()
     lecture = owned(Lecture, data.get("lecture_id"))
     choices = data.get("options", [])
@@ -169,29 +168,52 @@ def report_card(key):
 
 @api.get("/reviews/mistakes")
 def mistakes():
-    rows = (
-        Attempt.query.filter_by(user_id=g.user.id, invalidated=False)
-        .order_by(Attempt.created_at.desc())
-        .limit(500)
-        .all()
-    )
-    seen, items = set(), []
-    for attempt in rows:
-        if attempt.card_id in seen:
-            continue
-        seen.add(attempt.card_id)
-        if attempt.grade != 0:
-            continue
-        card = owned(Card, attempt.card_id)
-        artifact = owned(Artifact, card.artifact_id) if card.artifact_id else None
-        items.append(
-            {
-                "attempt": public(attempt),
-                "card": public(card),
-                "stale": bool(artifact and artifact.stale),
-            }
+    newer = aliased(Attempt)
+    latest = (
+        ~select(newer.id)
+        .where(
+            newer.user_id == g.user.id,
+            newer.card_id == Attempt.card_id,
+            newer.invalidated.is_(False),
+            tuple_(newer.created_at, newer.id) > tuple_(Attempt.created_at, Attempt.id),
         )
-    return {"items": items}
+        .correlate(Attempt)
+        .exists()
+    )
+    query = Attempt.query.join(Card, Card.id == Attempt.card_id).filter(
+        Attempt.user_id == g.user.id,
+        Attempt.invalidated.is_(False),
+        Attempt.grade == 0,
+        Card.suspended.is_(False),
+        latest,
+    )
+    result = page(query, Attempt, {"mistakes": True})
+    cards = {
+        r.id: r
+        for r in Card.query.filter(
+            Card.user_id == g.user.id,
+            Card.id.in_([a["card_id"] for a in result["items"]]),
+        )
+    }
+    artifacts = {
+        r.id: r
+        for r in Artifact.query.filter(
+            Artifact.user_id == g.user.id,
+            Artifact.id.in_([r.artifact_id for r in cards.values() if r.artifact_id]),
+        )
+    }
+    result["items"] = [
+        {
+            "attempt": a,
+            "card": public(cards[a["card_id"]]),
+            "stale": bool(
+                artifacts.get(cards[a["card_id"]].artifact_id)
+                and artifacts[cards[a["card_id"]].artifact_id].stale
+            ),
+        }
+        for a in result["items"]
+    ]
+    return result
 
 
 @api.post("/cards/<key>/revisit")

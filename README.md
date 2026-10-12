@@ -87,3 +87,22 @@ Whisper의 짧은 프롬프트 한도 때문에 사전 자료 전체를 음성 �
 ```
 
 기존 버전은 `legacy/`에 보존했습니다. 새 앱은 `sm_` 테이블을 별도 DB에 생성하며 기존 DB를 자동 변환하거나 덮어쓰지 않습니다. 기존 OAuth·공유 화면은 활성 앱에 연결되지 않습니다.
+
+
+## 대규모 데이터 저장 기반
+
+목록 커서 페이지네이션, 사용자·상위 자료별 복합 인덱스, PostgreSQL `SKIP LOCKED` 작업 분배,
+구간별 생성 스냅샷, 원자적 업로드 용량 예약, 스트리밍 내보내기, 백업·복원 확인 도구를 제공합니다.
+현재 테이블은 19개이며, 로컬 원본 저장소를 사용합니다. 대규모 운영 서버 자체나 실제 사용자 데이터는 포함하지 않습니다.
+
+- [운영·확장 절차](docs/DATABASE_OPERATIONS.md)
+- [100만 합성 구간 측정 결과](docs/validation/million-segments.json)
+
+```sh
+flask --app app db upgrade
+flask --app app db-report
+# PostgreSQL 전용, 인덱스 설치 권한이 있는 운영자가 실행
+flask --app app search-index
+# 운영 DB와 무관한 새로운 로컬 테스트 폴더에만 합성 데이터 생성
+python scripts/benchmark-database.py --rows 1000000 --output test-results/my-scale-run
+```

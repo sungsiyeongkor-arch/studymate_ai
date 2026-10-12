@@ -37,6 +37,24 @@ export async function uploadFile(file, lectureId, onProgress) {
       localStorage.removeItem(storageKey);
     }
   }
+  if (
+    upload?.status === "pending" &&
+    upload.expires_at &&
+    Date.parse(upload.expires_at) < Date.now()
+  ) {
+    await api("/uploads/" + upload.id, { method: "DELETE" });
+    upload = null;
+    localStorage.removeItem(storageKey);
+  }
+  if (upload && ["cancelled", "expired"].includes(upload.status)) {
+    upload = null;
+    localStorage.removeItem(storageKey);
+  }
+  if (upload?.status === "assembling") {
+    throw Error(
+      "파일을 조립하고 있습니다. 잠시 후 다시 확인하세요. 계속 멈춰 있으면 운영자에게 복구를 요청하세요.",
+    );
+  }
   if (!upload) {
     upload = await api("/uploads", {
       method: "POST",

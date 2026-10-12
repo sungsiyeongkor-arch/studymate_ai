@@ -1,3 +1,4 @@
+from ..services.pagination import page
 from .common import (
     Artifact,
     Chat,
@@ -34,7 +35,11 @@ from .common import (
 def terms():
     if request.method == "GET":
         course = owned(Course, request.args.get("course_id"))
-        return {"items": listed(Term, course_id=course.id)}
+        return page(
+            Term.query.filter_by(user_id=g.user.id, course_id=course.id),
+            Term,
+            {"course_id": course.id},
+        )
     data = body()
     course = owned(Course, data.get("course_id"))
     row = Term(
@@ -156,14 +161,13 @@ def export_artifact(key):
 def chat(key):
     lecture = owned(Lecture, key)
     if request.method == "GET":
-        return {
-            "items": [
-                public(c)
-                for c in Chat.query.filter_by(
-                    user_id=g.user.id, lecture_id=key
-                ).order_by(Chat.created_at)
-            ]
-        }
+        batch = page(
+            Chat.query.filter_by(user_id=g.user.id, lecture_id=key),
+            Chat,
+            {"lecture_id": key},
+        )
+        batch["items"].reverse()
+        return batch
     data = body()
     question = text(data, "question", 4000, True)
     mode = data.get("mode", "sources")

@@ -1,3 +1,5 @@
+from ..services.pagination import page
+from sqlalchemy import func, select
 from .common import (
     Artifact,
     Attempt,
@@ -40,7 +42,24 @@ def dashboard():
     return {
         "courses": listed(Course),
         "lectures": listed(Lecture),
+        "collections_url": "/api/collections/courses",
+        "lecture_counts": dict(
+            db.session.execute(
+                select(Lecture.course_id, func.count())
+                .where(
+                    Lecture.user_id == g.user.id,
+                    Lecture.course_id.in_(
+                        select(Course.id)
+                        .where(Course.user_id == g.user.id)
+                        .order_by(Course.created_at.desc(), Course.id.desc())
+                        .limit(50)
+                    ),
+                )
+                .group_by(Lecture.course_id)
+            ).all()
+        ),
         "counts": {
+            "courses": Course.query.filter_by(user_id=g.user.id).count(),
             "materials": Material.query.filter_by(user_id=g.user.id).count(),
             "due": due,
             "attempts": Attempt.query.filter_by(
@@ -63,7 +82,7 @@ def dashboard():
 @api.route("/courses", methods=["GET", "POST"])
 def courses():
     if request.method == "GET":
-        return {"items": listed(Course)}
+        return page(Course.query.filter_by(user_id=g.user.id), Course, {})
     data = body()
     color = text(data, "color", 20) or "#386b54"
     if not re.fullmatch(r"#[0-9a-fA-F]{6}", color):
@@ -111,9 +130,9 @@ def lecture(key):
         "artifacts": listed(Artifact, lecture_id=key),
         "jobs": [
             public(j, ("payload",))
-            for j in Job.query.filter_by(user_id=g.user.id, lecture_id=key).order_by(
-                Job.created_at.desc()
-            )
+            for j in Job.query.filter_by(user_id=g.user.id, lecture_id=key)
+            .order_by(Job.created_at.desc())
+            .limit(50)
         ],
         "terms": listed(Term, course_id=row.course_id),
     }
@@ -124,12 +143,12 @@ def search():
     query = request.args.get("q", "").strip()[:150]
     if len(query) < 2:
         return {"items": []}
-    # Literal contains, not user-supplied SQL wildcard patterns.
-    rows = (
-        Segment.query.filter(
-            Segment.user_id == g.user.id, Segment.text.contains(query, autoescape=True)
-        )
-        .limit(60)
-        .all()
+    rows = Segment.query.filter(
+        Segment.user_id == g.user.id, Segment.text.contains(query, autoescape=True)
     )
-    return {"items": [{**public(s), "text": s.text[:1000]} for s in rows]}
+    return page(
+        rows,
+        Segment,
+        {"q": query},
+        serialize=lambda s: {**public(s), "text": s.text[:1000]},
+    )

@@ -1,3 +1,8 @@
+from flask import Response, stream_with_context
+from sqlalchemy import select
+from ..models import User, JobBatch
+from ..services import quota
+from ..services.pagination import page
 from .common import (
     Artifact,
     Citation,
@@ -33,32 +38,41 @@ from .common import (
 @api.get("/materials/<key>")
 def material(key):
     row = owned(Material, key)
-    return {
-        "material": public(row),
-        "segments": [
-            public(s)
-            for s in Segment.query.filter_by(material_id=key).order_by(Segment.ordinal)
-        ],
-    }
+    batch = page(
+        Segment.query.filter_by(user_id=g.user.id, material_id=key),
+        Segment,
+        {"material_id": key},
+        sort_key="ordinal",
+        ascending=True,
+    )
+    return {"material": public(row), "segments": batch.pop("items"), **batch}
 
 
 @api.get("/materials/<key>/export")
 def export_material(key):
     row = owned(Material, key)
-    segments = Segment.query.filter_by(material_id=key).order_by(Segment.ordinal).all()
-    blocks = [row.name, "StudyMate · 현재 수정본 (원본 파일과 별도)\n"]
-    for s in segments:
-        position = (
-            f"p. {s.page}"
-            if s.page
-            else (f"{s.start:.1f}–{s.end:.1f}초" if s.start is not None else "본문")
+    user_id, name = g.user.id, row.name
+
+    def generate():
+        yield name + "\nStudyMate · 현재 수정본 (원본 파일과 별도)\n"
+        query = Segment.query.filter_by(user_id=user_id, material_id=key).order_by(
+            Segment.ordinal
         )
-        blocks.append(f"[{position} · 버전 {s.revision} · {s.state}]\n{s.text}\n")
-    return send_file(
-        io.BytesIO("\n".join(blocks).encode("utf-8")),
+        for s in query.yield_per(100):
+            position = (
+                f"p. {s.page}"
+                if s.page
+                else (f"{s.start:.1f}–{s.end:.1f}초" if s.start is not None else "본문")
+            )
+            yield f"\n[{position} · 버전 {s.revision} · {s.state}]\n{s.text}\n"
+
+    return Response(
+        stream_with_context(generate()),
         mimetype="text/plain",
-        as_attachment=True,
-        download_name="studymate-transcript.txt",
+        headers={
+            "Content-Disposition": 'attachment; filename="studymate-transcript.txt"',
+            "X-Accel-Buffering": "no",
+        },
     )
 
 
@@ -241,12 +255,18 @@ def segment(key):
 def review_inbox():
     rows = Segment.query.filter(
         Segment.user_id == g.user.id, Segment.state.in_(["uncertain", "unreadable"])
-    ).all()
-    return {"items": [public(row) for row in rows]}
+    )
+    return page(
+        rows,
+        Segment,
+        {"inbox": True},
+        serialize=lambda s: {**public(s), "text": s.text[:1000]},
+    )
 
 
 @api.delete("/materials/<key>")
 def delete_material(key):
+    quota.lock_owner(g.user.id)
     material = owned(Material, key)
     if Job.query.filter(
         Job.material_id == key, Job.status.in_(["queued", "running"])
@@ -257,34 +277,29 @@ def delete_material(key):
         Job.lecture_id == material.lecture_id, Job.status.in_(["queued", "running"])
     ).first():
         abort(409, "이 강의의 AI 작업이 끝난 뒤 삭제해 주세요.")
-    segments = Segment.query.filter_by(material_id=key).all()
-    ids = [s.id for s in segments]
-    if ids:
-        affected = [
-            c.artifact_id for c in Citation.query.filter(Citation.segment_id.in_(ids))
-        ]
-        if affected:
-            Artifact.query.filter(Artifact.id.in_(affected)).update(
-                {"stale": True}, synchronize_session=False
-            )
-        Citation.query.filter(Citation.segment_id.in_(ids)).delete(
-            synchronize_session=False
-        )
-        Revision.query.filter(Revision.segment_id.in_(ids)).delete(
-            synchronize_session=False
-        )
-        HandwritingExample.query.filter(HandwritingExample.segment_id.in_(ids)).delete(
-            synchronize_session=False
-        )
-        Segment.query.filter(Segment.id.in_(ids)).delete(synchronize_session=False)
+    ids = select(Segment.id).where(Segment.material_id == key)
+    affected = select(Citation.artifact_id).where(Citation.segment_id.in_(ids))
+    Artifact.query.filter(Artifact.id.in_(affected)).update(
+        {"stale": True}, synchronize_session=False
+    )
+    for model in (Citation, Revision, HandwritingExample):
+        model.query.filter(model.segment_id.in_(ids)).delete(synchronize_session=False)
+    Segment.query.filter_by(material_id=key).delete(synchronize_session=False)
     uploads = Upload.query.filter_by(material_id=key).all()
     for upload in uploads:
         UploadChunk.query.filter_by(upload_id=upload.id).delete()
         db.session.delete(upload)
+    JobBatch.query.filter(
+        JobBatch.job_id.in_(select(Job.id).where(Job.lecture_id == material.lecture_id))
+    ).delete(synchronize_session=False)
     Job.query.filter_by(material_id=key).delete()
     # Remove generation checkpoints containing source text for this lecture.
     for job in Job.query.filter_by(lecture_id=material.lecture_id):
         job.payload = {}
+    User.query.filter(User.id == g.user.id, User.storage_used >= material.size).update(
+        {User.storage_used: User.storage_used - material.size},
+        synchronize_session=False,
+    )
     db.session.delete(material)
     db.session.commit()
     storage.path(material.storage_key).unlink(missing_ok=True)

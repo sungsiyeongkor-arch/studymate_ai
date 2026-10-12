@@ -87,7 +87,11 @@ def run_migrations_online():
                 directives[:] = []
                 logger.info("No changes in schema detected.")
 
-    conf_args = current_app.extensions["migrate"].configure_args
+    conf_args = dict(current_app.extensions["migrate"].configure_args)
+    # Operational optional index is managed by `flask search-index`, outside transactional DDL.
+    conf_args["include_object"] = lambda obj, name, kind, reflected, compare: not (
+        kind == "index" and name == "ix_sm_segments_text_trgm"
+    )
     if conf_args.get("process_revision_directives") is None:
         conf_args["process_revision_directives"] = process_revision_directives
 

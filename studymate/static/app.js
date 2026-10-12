@@ -10,6 +10,7 @@ import {
   busy,
   badge,
 } from "./lib/ui.js";
+import { collectionView } from "./views/collections.js";
 import { lectureView, materialView } from "./views/lecture.js";
 import {
   reviewView,
@@ -96,7 +97,7 @@ async function dashboard(library = false) {
     `<div class="page-heading"><div><span class="eyebrow">${library ? "MY COURSES" : "LEARN A LITTLE, REMEMBER LONGER"}</span><h1>${library ? "내 과목" : `${esc(user.name)}님, 오늘도 한 걸음.`}</h1><p class="muted">${library ? "과목별로 강의자료와 학습 기록을 정리하세요." : "배운 내용을 연결하고, 기억으로 남겨보세요."}</p></div><button class="btn primary" id="add-course">${icon("plus")} 새 과목</button></div>${
       !library
         ? `<section class="hero"><div><span class="eyebrow">TODAY’S LEARNING</span><h2>읽는 공부를 넘어,<br>기억하는 공부로.</h2><p>강의를 준비하고, 궁금한 건 바로 물어보고.<br>나에게 필요한 복습을 시작하세요.</p><a class="btn primary" href="#/review">오늘의 복습 시작 ${icon("arrow")}</a></div><div class="hero-art" aria-hidden="true"><div class="orbit"></div><div class="book-back"></div><div class="book-front"><span>STUDY<br>MATE.</span><small>Make it yours.</small></div><div class="float-label">${icon("check")} 하나씩, 확실하게</div></div></section><div class="stats">${[
-            ["grid", d.courses.length, "함께 공부하는 과목"],
+            ["grid", d.counts.courses, "함께 공부하는 과목"],
             ["file", d.counts.materials, "모아둔 학습자료"],
             ["clock", d.counts.due, "오늘 복습할 카드"],
             ["check", d.counts.attempts, "쌓아온 복습 기록"],
@@ -107,11 +108,11 @@ async function dashboard(library = false) {
             )
             .join("")}</div>`
         : ""
-    }<div class="dashboard-columns"><section><div class="section-heading"><h2>나의 과목 <span class="count">${d.courses.length}</span></h2></div><div class="course-grid">${
+    }<div class="dashboard-columns"><section><div class="section-heading"><h2>나의 과목 <span class="count">${d.counts.courses}</span></h2><a class="btn small" href="#/collection/courses">전체 과목</a></div><div class="course-grid">${
       d.courses
         .map(
           (c, i) =>
-            `<article class="course-card"><div class="course-icon tone-${i % 4}">${icon("book")}</div><span class="eyebrow">COURSE ${String(i + 1).padStart(2, "0")}</span><h3>${esc(c.title)}</h3><p>${esc(c.description || "이 과목의 배움을 차곡차곡 모아요.")}</p><div class="course-footer"><span>${d.lectures.filter((l) => l.course_id === c.id).length}개의 강의</span><button class="icon-button open-course" data-id="${c.id}" aria-label="${esc(c.title)} 열기">${icon("arrow")}</button></div><div class="course-lectures">${d.lectures
+            `<article class="course-card"><div class="course-icon tone-${i % 4}">${icon("book")}</div><span class="eyebrow">COURSE ${String(i + 1).padStart(2, "0")}</span><h3>${esc(c.title)}</h3><p>${esc(c.description || "이 과목의 배움을 차곡차곡 모아요.")}</p><div class="course-footer"><span>${d.lecture_counts[c.id] || 0}개의 강의</span><button class="icon-button open-course" data-id="${c.id}" aria-label="${esc(c.title)} 열기">${icon("arrow")}</button></div><div class="course-lectures">${d.lectures
               .filter((l) => l.course_id === c.id)
               .slice(0, 3)
               .map(
@@ -136,30 +137,18 @@ async function dashboard(library = false) {
   $$(".open-course").forEach(
     (b) =>
       (b.onclick = () => {
-        const c = d.courses.find((c) => c.id === b.dataset.id);
-        modal(
-          c.title,
-          `<div class="stack">${
-            d.lectures
-              .filter((l) => l.course_id === c.id)
-              .map(
-                (l) =>
-                  `<a class="list-row" href="#/lecture/${l.id}">${esc(l.title)} ${icon("arrow")}</a>`,
-              )
-              .join("") || "<p>아직 강의가 없어요.</p>"
-          }<button id="course-lecture" class="btn primary">강의 추가</button></div>`,
-        );
-        $$("#dialog a").forEach(
-          (a) => (a.onclick = () => $("#dialog").close()),
-        );
-        $("#course-lecture").onclick = () => newLecture(c.id);
+        location.hash = "/collection/lectures?course_id=" + b.dataset.id;
       }),
   );
 }
 async function searchView(inbox = false) {
   $("#content").innerHTML =
     `<div class="page-heading"><div><span class="eyebrow">${inbox ? "REVIEW INBOX" : "FIND YOUR KNOWLEDGE"}</span><h1>${inbox ? "확인할 내용" : "자료 검색"}</h1><p class="muted">${inbox ? "AI가 놓칠 수 있는 내용을 원본과 함께 확인하세요." : "업로드한 자료와 수정한 녹취록에서 찾아보세요."}</p></div></div>${!inbox ? '<form id="search-form" class="inline-form"><input name="q" required minlength="2" placeholder="두 글자 이상 입력"><button class="btn primary" type="submit">검색</button></form>' : ""}<div id="results" class="stack"></div>`;
-  const show = (rows) => {
+  let nextCursor = null,
+    endpoint = "";
+  const show = (data) => {
+    const rows = data.items;
+    nextCursor = data.next_cursor;
     $("#results").innerHTML =
       rows
         .map(
@@ -174,11 +163,34 @@ async function searchView(inbox = false) {
           : "다른 검색어로 찾아보세요.",
       );
   };
-  if (inbox) show((await api("/review-inbox")).items);
-  else
-    bindForm("#search-form", async (d) =>
-      show((await api("/search?q=" + encodeURIComponent(d.q))).items),
+  const controls = document.createElement("div");
+  controls.className = "row";
+  controls.innerHTML =
+    '<button id="search-first" class="btn">처음</button><button id="search-next" class="btn">다음 결과</button>';
+  $("#results").after(controls);
+  const load = async (cursor = "") => {
+    const d = await api(
+      endpoint +
+        (endpoint.includes("?") ? "&" : "?") +
+        "cursor=" +
+        encodeURIComponent(cursor),
     );
+    show(d);
+    $("#search-next").disabled = !nextCursor;
+  };
+  $("#search-next").disabled = true;
+  $("#search-first").onclick = () =>
+    endpoint && busy($("#search-first"), () => load());
+  $("#search-next").onclick = () =>
+    busy($("#search-next"), () => load(nextCursor));
+  if (inbox) {
+    endpoint = "/review-inbox";
+    await load();
+  } else
+    bindForm("#search-form", async (d) => {
+      endpoint = "/search?q=" + encodeURIComponent(d.q);
+      await load();
+    });
 }
 async function route() {
   try {
@@ -192,6 +204,7 @@ async function route() {
     shell(path);
     const [kind, id, extra] = path.split("/").filter(Boolean);
     if (!kind || kind === "library") await dashboard(kind === "library");
+    else if (kind === "collection") await collectionView(id);
     else if (kind === "lecture") await lectureView(id, status);
     else if (kind === "material") await materialView(id, extra, status);
     else if (kind === "review") await reviewView();

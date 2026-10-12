@@ -41,6 +41,8 @@ def create_app(config=None):
         SQLALCHEMY_ENGINE_OPTIONS={"pool_pre_ping": True},
         DATA_DIR=str(data),
         MAX_CONTENT_LENGTH=520 * 1024 * 1024,
+        STORAGE_LIMIT_BYTES=int(os.getenv("STORAGE_LIMIT_BYTES", str(10 * 1024**3))),
+        UPLOAD_TTL_HOURS=int(os.getenv("UPLOAD_TTL_HOURS", "24")),
         MAX_FILE_BYTES=512 * 1024 * 1024,
         SESSION_COOKIE_HTTPONLY=True,
         SESSION_COOKIE_SAMESITE="Lax",
@@ -54,6 +56,16 @@ def create_app(config=None):
     )
     if config:
         app.config.update(config)
+    if app.config["SQLALCHEMY_DATABASE_URI"].startswith("postgresql"):
+        app.config["SQLALCHEMY_ENGINE_OPTIONS"].update(
+            pool_size=int(os.getenv("DB_POOL_SIZE", "5")),
+            max_overflow=int(os.getenv("DB_MAX_OVERFLOW", "5")),
+            pool_timeout=int(os.getenv("DB_POOL_TIMEOUT", "10")),
+            pool_recycle=1800,
+            connect_args={
+                "options": "-c statement_timeout=30000 -c lock_timeout=5000 -c idle_in_transaction_session_timeout=600000"
+            },
+        )
     db.init_app(app)
     migrate.init_app(app, db)
     limiter.init_app(app)
@@ -85,6 +97,7 @@ def create_app(config=None):
             "/api/auth/login",
             "/api/auth/register",
             "/api/health",
+            "/api/ready",
         )
         if (
             request.path.startswith("/api/")
@@ -137,4 +150,7 @@ def create_app(config=None):
 
         work(once)
 
+    from .services.operations import register_commands
+
+    register_commands(app)
     return app

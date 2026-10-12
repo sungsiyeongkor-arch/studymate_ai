@@ -34,7 +34,7 @@ export async function lectureView(id, status) {
   const d = await api("/lectures/" + id),
     l = d.lecture;
   $("#content").innerHTML =
-    `<div class="page-heading"><div><a class="small" href="#/library">내 과목 / 강의</a><h1>${esc(l.title)}</h1><p>${esc(l.topic || "자료를 올리고 강의의 맥락을 알려주세요.")}</p></div><a class="btn primary" href="#/chat/${id}">${icon("chat")} AI에게 질문</a></div><div class="tabs"><button class="tab active" data-tab="prepare">강의 준비 · 자료</button><button class="tab" data-tab="learn">학습 노트 · 개념도</button><button class="tab" data-tab="terms">전문용어장</button></div><div id="lecture-pane"></div>`;
+    `<div class="page-heading"><div><a class="small" href="#/library">내 과목 / 강의</a><h1>${esc(l.title)}</h1><p>${esc(l.topic || "자료를 올리고 강의의 맥락을 알려주세요.")}</p></div><a class="btn primary" href="#/chat/${id}">${icon("chat")} AI에게 질문</a></div><div class="tabs"><button class="tab active" data-tab="prepare">강의 준비 · 자료</button><button class="tab" data-tab="learn">학습 노트 · 개념도</button><button class="tab" data-tab="terms">전문용어장</button></div><div class="row wrap"><a class="btn small" href="#/collection/materials?lecture_id=${id}">전체 자료</a><a class="btn small" href="#/collection/artifacts?lecture_id=${id}">전체 학습 노트</a><a class="btn small" href="#/collection/terms?course_id=${l.course_id}">전체 용어</a><a class="btn small" href="#/collection/jobs?lecture_id=${id}">전체 처리 이력</a></div><div id="lecture-pane"></div>`;
   const render = (tab) => {
     $$(".tab").forEach((b) =>
       b.classList.toggle("active", b.dataset.tab === tab),
@@ -237,7 +237,7 @@ export async function lectureView(id, status) {
   $$(".tab").forEach((b) => (b.onclick = () => render(b.dataset.tab)));
   render("prepare");
 }
-async function openArtifact(id) {
+export async function openArtifact(id) {
   const d = await api("/artifacts/" + id),
     a = d.artifact || d;
   const c = a.content;
@@ -285,14 +285,32 @@ async function openArtifact(id) {
         (n) => (n.style.visibility = e.target.checked ? "hidden" : "visible"),
       );
 }
-export async function materialView(id, selected, status) {
-  const d = await api("/materials/" + id),
+export async function materialView(id, selected, status, cursor = "") {
+  const d = await api(
+      "/materials/" + id + "?cursor=" + encodeURIComponent(cursor),
+    ),
     m = d.material;
+  if (selected && !d.segments.some((s) => s.id === selected)) {
+    const chosen = (await api("/segments/" + selected)).segment;
+    if (chosen.material_id === id) d.segments.unshift(chosen);
+  }
   let page = 1,
     cropMode = false,
     start;
   $("#content").innerHTML =
     `<div class="page-heading"><div><a class="small" href="#/lecture/${m.lecture_id}">← 강의로 돌아가기</a><h1>${esc(m.name)}</h1><p>${badge(m.status)} · 원본과 읽어낸 내용을 함께 확인하세요.</p></div><div class="row"><a class="btn" href="/api/materials/${id}/file" target="_blank" rel="noopener">원본 열기</a><a class="btn" href="/api/materials/${id}/export">전사 내보내기</a><button class="btn danger" id="delete-material">삭제</button></div></div><div class="material-layout"><section class="panel">${m.kind === "pdf" ? `<div class="material-toolbar"><label>페이지<input id="page-number" type="number" min="1" max="${m.page_count || 1000}" value="1"></label><button class="btn" id="page-go">이동</button><button class="btn" id="crop-mode">필기 영역 선택</button></div><p id="crop-hint" class="small">필기 영역 선택을 누르고 글씨가 있는 곳을 드래그하세요.</p><div class="pdf-stage"><div class="source-page" id="source-page"><img id="pdf-image" src="/api/materials/${id}/pages/1" alt="PDF 원본 페이지"><div id="crop-box" class="crop-overlay hidden"></div></div></div>` : m.kind === "audio" ? `<audio id="audio" controls preload="metadata" src="/api/materials/${id}/file"></audio><p class="small">녹취록의 시간 버튼을 누르면 해당 구간으로 이동합니다.</p>` : "<h3>원본 자료</h3><p>텍스트를 추출한 내용입니다. 원본 열기를 통해 비교하세요.</p>"}</section><section><div class="section-heading"><h2>읽어낸 내용</h2><button id="reload-material" class="btn small">새로고침</button></div><div class="segments">${d.segments.map((s) => `<article class="segment-card" id="segment-${s.id}"><div class="row between"><button class="btn small jump" data-id="${s.id}">${s.page ? "p. " + s.page : time(s.start)}${s.bbox ? " · 필기 영역" : ""}</button>${badge(s.state)}</div><p class="prose">${esc(s.text || "아직 읽어낸 내용이 없습니다.")}</p><div class="row wrap"><button class="btn small edit-segment" data-id="${s.id}">확인 · 수정</button>${m.kind === "pdf" ? `<button class="btn small recognize" data-id="${s.id}">${icon("spark")} 확대 판독</button>` : ""}<a class="btn small" href="#/chat/${m.lecture_id}?segment=${s.id}">질문</a></div></article>`).join("") || empty("아직 읽어낸 내용이 없어요", "처리 현황을 확인하거나 잠시 후 새로고침해 주세요.")}</div></section></div>`;
+  const paging = document.createElement("div");
+  paging.className = "row";
+  paging.innerHTML =
+    '<button class="btn" id="segments-first">처음 구간</button><button class="btn" id="segments-next">다음 구간</button>';
+  $(".segments").after(paging);
+  $("#segments-next").disabled = !d.next_cursor;
+  $("#segments-first").onclick = () =>
+    busy($("#segments-first"), () => materialView(id, null, status));
+  $("#segments-next").onclick = () =>
+    busy($("#segments-next"), () =>
+      materialView(id, null, status, d.next_cursor),
+    );
   $("#reload-material").onclick = refresh;
   $("#delete-material").onclick = () => {
     modal(
@@ -411,8 +429,9 @@ async function editSegment(id, status, recognition) {
     p = recognition?.proposal;
   modal(
     p ? "판독 제안 확인" : "원문 확인 · 수정",
-    `<form id="segment-form" class="stack">${s.page && d.material_kind === "pdf" ? `<img class="source-preview" src="/api/segments/${id}/image" alt="선택한 PDF 원본">` : ""}${p ? `<div class="notice"><strong>문맥에 따른 제안 (자동 적용되지 않음)</strong><p class="prose">${esc(p.contextual_suggestion)}</p><p>불확실한 부분: ${esc((p.uncertain_spans || []).join(", "))}</p><p>${esc(p.explanation)}</p></div>` : ""}<label>읽어낸 원문<textarea name="text" rows="8">${esc(p?.visual_text ?? s.text)}</textarea></label><label>수정 구분<select name="reason"><option value="transcription">원본을 그대로 읽어 수정</option><option value="content_edit">원문의 내용 자체를 편집</option></select></label>${s.bbox && status.personalization ? '<label class="check-label"><input type="checkbox" name="save_example">본인의 손글씨이며 원문을 확인했습니다. 필체 예시로 저장</label>' : ""}<p class="small">원본은 보존됩니다. 수정하면 관련 AI 노트는 재확인 상태로 바뀝니다.</p><button type="submit" class="btn primary">확인하고 저장</button><details><summary>수정 기록 ${d.revisions.length}개</summary>${d.revisions.map((r) => `<div class="revision"><strong>버전 ${r.number} · ${esc(r.author)}</strong><p class="prose">${esc(r.text)}</p></div>`).join("")}</details></form>`,
+    `<form id="segment-form" class="stack">${s.page && d.material_kind === "pdf" ? `<img class="source-preview" src="/api/segments/${id}/image" alt="선택한 PDF 원본">` : ""}${p ? `<div class="notice"><strong>문맥에 따른 제안 (자동 적용되지 않음)</strong><p class="prose">${esc(p.contextual_suggestion)}</p><p>불확실한 부분: ${esc((p.uncertain_spans || []).join(", "))}</p><p>${esc(p.explanation)}</p></div>` : ""}<label>읽어낸 원문<textarea name="text" rows="8">${esc(p?.visual_text ?? s.text)}</textarea></label><label>수정 구분<select name="reason"><option value="transcription">원본을 그대로 읽어 수정</option><option value="content_edit">원문의 내용 자체를 편집</option></select></label>${s.bbox && status.personalization ? '<label class="check-label"><input type="checkbox" name="save_example">본인의 손글씨이며 원문을 확인했습니다. 필체 예시로 저장</label>' : ""}<p class="small">원본은 보존됩니다. 수정하면 관련 AI 노트는 재확인 상태로 바뀝니다.</p><button type="submit" class="btn primary">확인하고 저장</button><a class="btn small" id="all-revisions" href="#/collection/revisions?segment_id=${id}">전체 수정 기록</a><details><summary>최근 수정 기록 ${d.revisions.length}개</summary>${d.revisions.map((r) => `<div class="revision"><strong>버전 ${r.number} · ${esc(r.author)}</strong><p class="prose">${esc(r.text)}</p></div>`).join("")}</details></form>`,
   );
+  $("#all-revisions").onclick = () => $("#dialog").close();
   bindForm("#segment-form", async (v) => {
     await api("/segments/" + id, {
       method: "PATCH",
