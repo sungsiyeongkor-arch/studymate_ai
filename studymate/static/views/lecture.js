@@ -237,7 +237,7 @@ export async function lectureView(id, status) {
   $$(".tab").forEach((b) => (b.onclick = () => render(b.dataset.tab)));
   render("prepare");
 }
-async function openArtifact(id) {
+export async function openArtifact(id) {
   const d = await api("/artifacts/" + id),
     a = d.artifact || d;
   const c = a.content;

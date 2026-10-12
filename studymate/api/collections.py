@@ -56,7 +56,7 @@ def collection(name):
 
     def serialize(row):
         value = public(row, ("payload", "content"))
-        if "text" in value:
+        if model is Segment and "text" in value:
             value["text"] = value["text"][:1000]
         return value
 

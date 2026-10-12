@@ -224,3 +224,69 @@ def test_postgres_workers_skip_locked_job(app, client):
             claimed = jobs.claim()
             assert claimed.id == second_id
             transaction.rollback()
+
+
+def test_snapshot_retention_preserves_retry_and_artifacts(app, client):
+    lecture = client.setup_lecture()
+    with app.app_context():
+        for state in ("completed", "failed"):
+            row = Job(
+                user_id=client.user["id"],
+                lecture_id=lecture["id"],
+                kind="summary",
+                status=state,
+                heartbeat=now() - timedelta(days=60),
+            )
+            db.session.add(row)
+            db.session.flush()
+            db.session.add(
+                JobBatch(
+                    user_id=row.user_id,
+                    job_id=row.id,
+                    ordinal=0,
+                    sources=[],
+                    completed=state == "completed",
+                )
+            )
+        db.session.add(
+            Artifact(
+                user_id=client.user["id"],
+                lecture_id=lecture["id"],
+                kind="summary",
+                title="keep",
+                content={},
+            )
+        )
+        db.session.commit()
+    runner = app.test_cli_runner()
+    assert runner.invoke(args=["prune-job-snapshots"]).exit_code == 0
+    with app.app_context():
+        assert JobBatch.query.count() == 2
+    assert runner.invoke(args=["prune-job-snapshots", "--apply"]).exit_code == 0
+    with app.app_context():
+        assert JobBatch.query.count() == 1
+        assert JobBatch.query.one().completed is False
+        assert Artifact.query.count() == 1
+
+
+def test_sqlite_backup_restore_and_checksum_rejection(app, client, tmp_path):
+    import runpy
+    from pathlib import Path
+
+    with app.app_context():
+        if db.engine.dialect.name != "sqlite":
+            pytest.skip("PostgreSQL backup/restore is checked by the CI restore drill")
+        url = str(db.engine.url)
+    root = Path(__file__).resolve().parents[1]
+    backup = runpy.run_path(str(root / "scripts/backup-database.py"))["backup"]
+    verify = runpy.run_path(str(root / "scripts/verify-backup.py"))["verify"]
+    folder = tmp_path / "backup"
+    backup(url, folder)
+    restored = tmp_path / "restored.sqlite3"
+    result = verify(folder, restored)
+    assert result["restored_table_counts"]["sm_users"] == 1
+    with pytest.raises(FileExistsError):
+        verify(folder, restored)
+    (folder / "database.sqlite3").write_bytes(b"corrupt test backup")
+    with pytest.raises(ValueError, match="checksum"):
+        verify(folder, tmp_path / "should-not-exist.sqlite3")

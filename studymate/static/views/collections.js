@@ -1,3 +1,4 @@
+import { openArtifact } from "./lecture.js";
 import { api } from "../lib/api.js";
 import { $, $$, esc, busy, badge, empty, modal } from "../lib/ui.js";
 import { newLecture } from "../app.js";
@@ -44,10 +45,24 @@ export async function collectionView(spec) {
                   : r.lecture_id
                     ? "/lecture/" + r.lecture_id
                     : "";
-          return `<article class="panel"><h3>${esc(r.title || r.name || r.word || r.kind || "학습 기록")}</h3><p class="prewrap">${esc(r.text || r.meaning || r.error || "")}</p>${r.status ? badge(r.status) : ""}<div class="row wrap">${href ? `<a class="btn small" href="#${href}">열기</a>` : ""}${name === "artifacts" ? `<a class="btn small" href="/api/artifacts/${r.id}/export">노트 다운로드</a>` : ""}${name === "examples" ? `<button class="btn small remove-example" data-id="${r.id}">예시 삭제</button>` : ""}${name === "jobs" && ["failed", "blocked"].includes(r.status) ? `<button class="btn small retry-job" data-id="${r.id}">재시도</button>` : ""}${name === "uploads" && r.status === "pending" ? `<button class="btn small cancel-upload" data-id="${r.id}">업로드 취소 · 공간 반환</button>` : ""}</div></article>`;
+          return `<article class="panel"><h3>${esc(r.title || r.name || r.word || r.kind || "학습 기록")}</h3><p class="prewrap">${esc(r.text || r.meaning || r.error || "")}</p>${r.status ? badge(r.status) : ""}<div class="row wrap">${href ? `<a class="btn small" href="#${href}">열기</a>` : ""}${name === "artifacts" ? `<button class="btn small open-artifact" data-id="${r.id}">노트 보기</button><a class="btn small" href="/api/artifacts/${r.id}/export">노트 다운로드</a>` : ""}${name === "terms" && !r.confirmed ? `<button class="btn small confirm-term" data-id="${r.id}">원문 확인 완료</button>` : ""}${name === "examples" ? `<button class="btn small remove-example" data-id="${r.id}">예시 삭제</button>` : ""}${name === "jobs" && ["failed", "blocked"].includes(r.status) ? `<button class="btn small retry-job" data-id="${r.id}">재시도</button>` : ""}${name === "uploads" && r.status === "pending" ? `<button class="btn small cancel-upload" data-id="${r.id}">업로드 취소 · 공간 반환</button>` : ""}</div></article>`;
         })
         .join("") ||
       empty("기록이 없습니다", "새로운 자료를 추가하면 여기에 표시됩니다.");
+    $$(".open-artifact").forEach(
+      (b) => (b.onclick = () => busy(b, () => openArtifact(b.dataset.id))),
+    );
+    $$(".confirm-term").forEach(
+      (b) =>
+        (b.onclick = () =>
+          busy(b, async () => {
+            await api("/terms/" + b.dataset.id, {
+              method: "PATCH",
+              body: { confirmed: true },
+            });
+            await load();
+          })),
+    );
     $$(".cancel-upload").forEach(
       (b) =>
         (b.onclick = () =>

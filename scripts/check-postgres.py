@@ -69,11 +69,26 @@ with app.app_context():
         )
         db.session.commit()
     db.session.execute(text("ANALYZE sm_segments"))
+    before_cleanup = db.session.execute(
+        text(
+            "EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) SELECT id FROM sm_segments WHERE user_id=:owner AND text LIKE :needle LIMIT 51"
+        ),
+        {"owner": owner, "needle": "%XYZ987%"},
+    ).scalar()
+    cleaned_pages = db.session.execute(
+        text("SELECT gin_clean_pending_list('ix_sm_segments_text_trgm')")
+    ).scalar()
+    db.session.execute(text("ANALYZE sm_segments"))
     plan = db.session.execute(
         text(
             "EXPLAIN (ANALYZE, BUFFERS, FORMAT JSON) SELECT id FROM sm_segments WHERE user_id=:owner AND text LIKE :needle LIMIT 51"
         ),
         {"owner": owner, "needle": "%XYZ987%"},
+    ).scalar()
+    valid = db.session.execute(
+        text(
+            "SELECT indisvalid FROM pg_index WHERE indexrelid='ix_sm_segments_text_trgm'::regclass"
+        )
     ).scalar()
     count = db.session.execute(
         text(
@@ -82,7 +97,9 @@ with app.app_context():
         {"owner": owner},
     ).scalar()
     assert count == 1
-    assert "ix_sm_segments_text_trgm" in json.dumps(plan)
+    assert valid is True
+    used = "ix_sm_segments_text_trgm" in json.dumps(plan)
+    db.session.commit()
     Path("test-results").mkdir(exist_ok=True)
     Path("test-results/postgres-search-report.json").write_text(
         json.dumps(
@@ -90,6 +107,10 @@ with app.app_context():
                 "synthetic_only": True,
                 "rows": 20000,
                 "plan": plan,
+                "before_pending_cleanup": before_cleanup,
+                "pending_pages_cleaned": cleaned_pages,
+                "trigram_index_used": used,
+                "index_valid": valid,
                 "korean_match_count": count,
             },
             ensure_ascii=False,
@@ -97,4 +118,6 @@ with app.app_context():
         ),
         encoding="utf-8",
     )
-    print("20,000-row PostgreSQL search probe passed; planner used pg_trgm index")
+    print(
+        f"20,000-row PostgreSQL search probe passed; pg_trgm selected={used}; pending pages cleaned={cleaned_pages}"
+    )

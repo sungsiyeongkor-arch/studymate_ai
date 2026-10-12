@@ -72,3 +72,6 @@ PostgreSQL 복원 확인은 운영 DB와 다른 **빈** DB를 만들고 `RESTORE
 다음 확장은 실제 부하에 맞춰 선택합니다: 객체 저장소, 연결 풀 프록시, 집계 캐시, 전용 검색/벡터 인덱스, 시간별 이력 파티셔닝과 보관 정책, DB tenant 제약, 장애 복구 훈련. 무조건 샤딩하거나 초기부터 파티션을 만드는 대신 실제 느린 쿼리·락·디스크 지표로 판단합니다.
 
 근거: [PostgreSQL pg_trgm](https://www.postgresql.org/docs/17/pgtrgm.html), [SKIP LOCKED](https://www.postgresql.org/docs/17/sql-select.html), [SQLAlchemy 대량 결과 스트리밍](https://docs.sqlalchemy.org/en/20/orm/queryguide/api.html#fetching-large-result-sets-with-yield-per).
+
+
+대량 적재 직후에는 GIN pending list가 검색 비용을 높일 수 있습니다. PostgreSQL 검증 스크립트는 정리 전·후 실행계획과 `gin_clean_pending_list`가 정리한 페이지 수를 함께 기록합니다. 운영에서는 autovacuum/autoanalyze 상태를 관찰하고 적재 뒤 `VACUUM (ANALYZE)` 등의 유지 관리를 계획하세요. 플래너가 항상 같은 인덱스를 선택하는 것은 아니므로 설치·유효성·정확한 검색 결과와 실제 플랜을 구분합니다. [공식 GIN 구현 설명](https://www.postgresql.org/docs/17/gin-implementation.html).

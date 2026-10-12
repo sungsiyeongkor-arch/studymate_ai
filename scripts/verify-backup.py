@@ -26,8 +26,10 @@ def verify(backup_dir, sqlite_output=None):
         with sqlite_output.open("xb") as target, source.open("rb") as stream:
             shutil.copyfileobj(stream, target)
         with sqlite3.connect(sqlite_output) as connection:
-            assert connection.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
-            assert not connection.execute("PRAGMA foreign_key_check").fetchall()
+            if connection.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
+                raise RuntimeError("Restored database integrity check failed")
+            if connection.execute("PRAGMA foreign_key_check").fetchall():
+                raise RuntimeError("Restored database foreign-key check failed")
             tables = [
                 r[0]
                 for r in connection.execute(
