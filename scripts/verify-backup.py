@@ -67,20 +67,21 @@ def verify(backup_dir, sqlite_output=None):
         for key in ("sslmode", "sslrootcert", "sslcert", "sslkey"):
             if key in url.query:
                 env["PG" + key.upper()] = url.query[key]
-        result = subprocess.run(
-            [
-                "pg_restore",
-                "--exit-on-error",
-                "--single-transaction",
-                "--no-owner",
-                "--no-acl",
-                "--dbname",
-                url.database,
-                str(source),
-            ],
-            env=env,
-            capture_output=True,
-        )
+        with source.open("rb") as input_stream:
+            result = subprocess.run(
+                [
+                    "pg_restore",
+                    "--exit-on-error",
+                    "--single-transaction",
+                    "--no-owner",
+                    "--no-acl",
+                    "--dbname",
+                    url.database,
+                ],
+                env=env,
+                stdin=input_stream,
+                capture_output=True,
+            )
         if result.returncode:
             raise RuntimeError(
                 "Restore failed; check versions and permissions. Credentials are not logged."

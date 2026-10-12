@@ -1,5 +1,11 @@
 name: StudyMate checks
-on: [push, pull_request]
+on:
+  push:
+    branches: [main]
+  pull_request:
+concurrency:
+  group: study-checks-${{ github.ref }}
+  cancel-in-progress: true
 permissions:
   contents: read
 jobs:
@@ -22,7 +28,7 @@ jobs:
           python-version: '3.12'
           cache: pip
       - run: pip install -r requirements-dev.txt
-      - run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - run: command -v ffmpeg || sudo apt-get install -y --no-install-recommends ffmpeg
       - run: python -m pytest -q
       - name: PostgreSQL integration
         env:
@@ -37,9 +43,14 @@ jobs:
           DATABASE_URL: postgresql+psycopg://postgres:test-only@localhost:5432/studymate_test
           RESTORE_DATABASE_URL: postgresql+psycopg://postgres:test-only@localhost:5432/studymate_restore_check
           PGPASSWORD: test-only
+          PG_CONTAINER: ${{ job.services.postgres.id }}
         run: |
-          sudo apt-get install -y postgresql-client-17
-          export PATH=/usr/lib/postgresql/17/bin:$PATH
+          mkdir -p "$RUNNER_TEMP/pg-tools"
+          for tool in pg_dump pg_restore createdb; do
+            printf '#!/bin/sh\nexec docker exec -i -e PGUSER -e PGPASSWORD -e PGHOST -e PGPORT -e PGDATABASE "%s" %s "$@"\n' "$PG_CONTAINER" "$tool" > "$RUNNER_TEMP/pg-tools/$tool"
+            chmod +x "$RUNNER_TEMP/pg-tools/$tool"
+          done
+          export PATH="$RUNNER_TEMP/pg-tools:$PATH"
           pg_dump --version
           flask --app app db upgrade
           flask --app app search-index

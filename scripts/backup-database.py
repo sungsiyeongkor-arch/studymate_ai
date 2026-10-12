@@ -38,22 +38,20 @@ def backup(url, output):
         for key in ("sslmode", "sslrootcert", "sslcert", "sslkey"):
             if key in parsed.query:
                 env["PG" + key.upper()] = parsed.query[key]
-        result = subprocess.run(
-            [
-                "pg_dump",
-                "--format=custom",
-                "--no-owner",
-                "--no-acl",
-                "--file",
-                str(target),
-            ],
-            env=env,
-            capture_output=True,
-        )
+        with target.open("xb") as output_stream:
+            result = subprocess.run(
+                ["pg_dump", "--format=custom", "--no-owner", "--no-acl"],
+                env=env,
+                stdout=output_stream,
+                stderr=subprocess.PIPE,
+            )
         if result.returncode:
             message = result.stderr.decode("utf-8", errors="replace")
             if os.getenv("CI") == "true" and (parsed.database or "").endswith("_test"):
-                print(message.replace(parsed.password or "test-only", "[REDACTED]"), file=sys.stderr)
+                print(
+                    message.replace(parsed.password or "test-only", "[REDACTED]"),
+                    file=sys.stderr,
+                )
             raise RuntimeError(
                 "pg_dump failed; check client version, network and database permissions. No credentials were logged."
             )
