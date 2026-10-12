@@ -1,0 +1,54 @@
+x-app: &app
+  build: .
+  env_file: .env
+  environment:
+    DATABASE_URL: postgresql+psycopg://studymate:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@db:5432/studymate
+    DATA_DIR: /data
+    RATELIMIT_STORAGE_URI: redis://redis:6379/0
+  volumes:
+    - files:/data
+  depends_on:
+    db:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: studymate
+      POSTGRES_USER: studymate
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    volumes:
+      - database:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U studymate"]
+      interval: 5s
+      retries: 10
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      retries: 10
+  migrate:
+    <<: *app
+    command: flask --app app db upgrade
+  web:
+    <<: *app
+    ports:
+      - "127.0.0.1:8000:8000"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+  worker:
+    <<: *app
+    command: flask --app app worker
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+volumes:
+  files:
+  database:
