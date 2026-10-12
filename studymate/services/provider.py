@@ -1,5 +1,6 @@
 import base64
 import json
+import math
 from datetime import timedelta
 import httpx
 from flask import current_app
@@ -59,6 +60,8 @@ def call_json(user_id, instruction, data, images=None):
         )
         response.raise_for_status()
         result = response.json()
+        if not isinstance(result, dict):
+            raise ValueError("Expected response object")
         if result.get("status") != "completed":
             raise ProviderError(
                 "AI 응답이 완료되지 않았습니다. 범위를 줄여 다시 시도해 주세요."
@@ -72,7 +75,12 @@ def call_json(user_id, instruction, data, images=None):
         value = json.loads(raw)
         if not isinstance(value, dict):
             raise ValueError("Expected object")
-        usage = result.get("usage", {})
+        usage = result.get("usage") or {}
+        if not isinstance(usage, dict) or any(
+            type(usage.get(k, 0)) is not int or usage.get(k, 0) < 0
+            for k in ("input_tokens", "output_tokens")
+        ):
+            raise ValueError("Invalid token usage")
         db.session.add(
             Usage(
                 user_id=user_id,
@@ -90,7 +98,7 @@ def call_json(user_id, instruction, data, images=None):
         raise ProviderError(
             f"AI 서비스 요청 실패 ({error.response.status_code}). 모델 권한·사용량·설정을 확인해 주세요."
         ) from error
-    except (httpx.HTTPError, ValueError, KeyError) as error:
+    except (httpx.HTTPError, ValueError, KeyError, TypeError, AttributeError) as error:
         raise ProviderError(
             "AI 응답을 확인할 수 없습니다. 잠시 후 다시 시도해 주세요."
         ) from error
@@ -120,12 +128,28 @@ def transcribe(user_id, audio_path, prompt, language):
             )
         response.raise_for_status()
         result = response.json()
+        if not isinstance(result, dict) or not isinstance(result.get("segments"), list):
+            raise ValueError("No timestamped segments")
+        for segment in result["segments"]:
+            if not isinstance(segment, dict) or not isinstance(
+                segment.get("text"), str
+            ):
+                raise ValueError("Invalid transcript text")
+            start, end = segment.get("start"), segment.get("end")
+            if (
+                any(
+                    type(v) not in (int, float) or not math.isfinite(v)
+                    for v in (start, end)
+                )
+                or not 0 <= start <= end
+            ):
+                raise ValueError("Invalid transcript timestamps")
         db.session.add(Usage(user_id=user_id, operation="transcription", model=model))
         db.session.commit()
         if "segments" not in result:
             raise ValueError("No timestamped segments")
         return result["segments"]
-    except (httpx.HTTPError, ValueError) as error:
+    except (httpx.HTTPError, ValueError, TypeError, AttributeError) as error:
         raise ProviderError(
             "음성 인식 요청에 실패했습니다. 키·파일·네트워크를 확인하고 재시도해 주세요."
         ) from error

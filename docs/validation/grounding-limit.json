@@ -1,0 +1,19 @@
+{
+  "test_type": "synthetic local validator probe; no model called",
+  "source": {
+    "id": "source-1",
+    "text": "Working memory has limited capacity."
+  },
+  "contradictory_response": {
+    "sections": [
+      {
+        "text": "Working memory has unlimited capacity.",
+        "source_ids": [
+          "source-1"
+        ]
+      }
+    ]
+  },
+  "accepted_by_shape_and_reference_validator": true,
+  "conclusion": "Reference membership does not establish semantic support. Hallucinations remain possible."
+}

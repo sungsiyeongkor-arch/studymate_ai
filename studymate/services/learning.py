@@ -1,9 +1,9 @@
-import json
 from flask import current_app
 from ..extensions import db
 from ..models import Artifact, Citation, Card, ReviewState, Term, Lecture, Segment
 from .provider import call_json, ProviderError
 from .retrieval import segments_for, source_dict
+from .validation import learning_result
 
 
 def source_batches(user_id, lecture_id):
@@ -47,14 +47,29 @@ def generate_batch(user_id, lecture_id, kind, sources, options):
             "sources": sources,
         },
     )
+    entries = learning_result(value, kind, sources)
+    current_sources = {
+        s.id: s
+        for s in Segment.query.filter(
+            Segment.user_id == user_id, Segment.id.in_(allowed)
+        )
+        .populate_existing()
+        .with_for_update()
+        .all()
+    }
+    stale = any(
+        key not in current_sources or current_sources[key].revision != version
+        for key, version in allowed.items()
+    )
+    if set(current_sources) != set(allowed):
+        raise ProviderError("분석 중 원문이 삭제되었습니다. 새 분석을 요청해 주세요.")
     if kind == "terms":
-        terms = value.get("terms")
-        if not isinstance(terms, list):
-            raise ProviderError("용어 응답 형식이 올바르지 않습니다.")
-        for term in terms[:25]:
+        if stale:
+            raise ProviderError(
+                "용어 추출 중 원문이 수정되었습니다. 새 분석을 요청해 주세요."
+            )
+        for term in entries:
             word = str(term.get("word", "")).strip()[:120]
-            if not word or not set(term.get("source_ids", [])) & allowed.keys():
-                continue
             if not Term.query.filter_by(course_id=lecture.course_id, word=word).first():
                 db.session.add(
                     Term(
@@ -68,44 +83,6 @@ def generate_batch(user_id, lecture_id, kind, sources, options):
                     )
                 )
         return None
-    field = {"summary": "sections", "quiz": "questions", "concepts": "edges"}[kind]
-    entries = value.get(field)
-    if not isinstance(entries, list) or not entries:
-        raise ProviderError("AI 결과에 필요한 항목이 없습니다.")
-    # Reject unsupported references rather than displaying invented citations.
-    for item in entries:
-        ids = item.get("source_ids", [])
-        if not isinstance(ids, list) or not ids or not set(ids) <= allowed.keys():
-            raise ProviderError(
-                "AI 결과의 출처를 확인할 수 없습니다. 결과를 저장하지 않았습니다."
-            )
-        if kind == "summary" and not isinstance(item.get("text"), str):
-            raise ProviderError("요약 형식 오류")
-        if kind == "quiz" and not all(
-            isinstance(item.get(k), str) and item[k].strip()
-            for k in ("question", "answer")
-        ):
-            raise ProviderError("문제 형식 오류")
-        if kind == "quiz" and item.get("options"):
-            choices = item["options"]
-            if (
-                not isinstance(choices, list)
-                or not 2 <= len(choices) <= 6
-                or not all(isinstance(v, str) and v.strip() for v in choices)
-                or len(set(choices)) != len(choices)
-                or item["answer"] not in choices
-            ):
-                raise ProviderError("객관식 선택지와 정답을 확인할 수 없습니다.")
-    if kind == "concepts":
-        nodes = value.get("nodes", [])
-        node_ids = {n.get("id") for n in nodes if isinstance(n, dict)}
-        if not nodes or any(
-            e.get("from") not in node_ids
-            or e.get("to") not in node_ids
-            or not e.get("label")
-            for e in entries
-        ):
-            raise ProviderError("개념도 연결 형식 오류")
     artifact = Artifact(
         user_id=user_id,
         lecture_id=lecture_id,
@@ -114,17 +91,7 @@ def generate_batch(user_id, lecture_id, kind, sources, options):
         content=value,
         model=current_app.config["OPENAI_MODEL"],
     )
-    current_sources = {
-        s.id: s
-        for s in Segment.query.filter(Segment.id.in_(allowed))
-        .populate_existing()
-        .with_for_update()
-        .all()
-    }
-    artifact.stale = any(
-        key not in current_sources or current_sources[key].revision != version
-        for key, version in allowed.items()
-    )
+    artifact.stale = stale
     db.session.add(artifact)
     db.session.flush()
     for source_id in {s for item in entries for s in item["source_ids"]}:

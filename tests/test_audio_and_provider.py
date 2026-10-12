@@ -144,3 +144,39 @@ def test_provider_schema_and_no_mock_fallback(app, client, monkeypatch):
         with pytest.raises(provider.ProviderError, match="401") as error:
             provider.call_json(client.user["id"], "x", {})
         assert "secret" not in str(error.value)
+
+
+def test_audio_fractional_tail_is_not_lost(app, client, monkeypatch, tmp_path):
+    lecture = client.setup_lecture()
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as wav:
+        wav.setparams((1, 2, 16000, 0, "NONE", "not compressed"))
+        wav.writeframes(b"\0" * 100)
+    client.upload(lecture, buf.getvalue(), "tail.wav")
+    monkeypatch.setattr(jobs, "credentials", lambda _: "test")
+    monkeypatch.setattr(jobs.shutil, "which", lambda _: "available")
+    monkeypatch.setattr(
+        jobs.tempfile, "TemporaryDirectory", lambda **kwargs: TempDir(tmp_path)
+    )
+    monkeypatch.setattr(
+        jobs,
+        "run_process",
+        lambda args, **kw: (
+            json.dumps({"format": {"duration": 300.1}}).encode()
+            if args[0] == "ffprobe"
+            else b""
+        ),
+    )
+    calls = []
+
+    def transcribe(*args):
+        calls.append(True)
+        return []
+
+    monkeypatch.setattr(jobs, "transcribe", transcribe)
+    with app.app_context():
+        job = jobs.claim()
+        jobs.execute(job)
+        assert job.status == "completed"
+        assert job.total == 2
+    assert len(calls) == 2

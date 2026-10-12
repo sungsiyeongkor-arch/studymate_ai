@@ -1,4 +1,5 @@
 from ..services.pagination import page
+from ..services.validation import object_value, string_value, source_ids
 from .common import (
     Artifact,
     Chat,
@@ -182,38 +183,63 @@ def chat(key):
         sources = [{**source_dict(selected_row), "text": selected_row.text[:12000]}] + [
             s for s in sources if s["id"] != selected
         ][:8]
+    sources = [
+        s
+        for s in sources
+        if s["text"].strip() and s["state"] not in ("uncertain", "unreadable")
+    ]
     history = (
         Chat.query.filter_by(user_id=g.user.id, lecture_id=key)
         .order_by(Chat.created_at.desc())
         .limit(8)
         .all()
     )
-    result = call_json(
-        g.user.id,
-        'Return {"answer":string,"source_ids":[string],"additional_explanation":string}. '
-        "Answer in Korean. In sources mode, abstain when evidence is insufficient. "
-        "In background mode, put outside knowledge ONLY in additional_explanation. "
-        "In hint mode, provide a next-step hint without revealing the final answer. "
-        "Cite only supplied source IDs. Note uncertain OCR/transcription. Do not claim unprovided evidence.",
-        {
-            "question": question,
-            "mode": mode,
-            "lecture": lecture.title,
-            "sources": sources,
-            "history": [{"role": c.role, "text": c.text} for c in reversed(history)],
-        },
+    result = (
+        {"answer": "", "source_ids": []}
+        if not sources and mode in ("sources", "hint")
+        else call_json(
+            g.user.id,
+            'Return {"answer":string,"source_ids":[string],"additional_explanation":string}. '
+            "Answer in Korean. In sources mode, abstain when evidence is insufficient. "
+            "In background mode, put outside knowledge ONLY in additional_explanation. "
+            "In hint mode, provide a next-step hint without revealing the final answer. "
+            "Cite only supplied source IDs. Note uncertain OCR/transcription. Do not claim unprovided evidence.",
+            {
+                "question": question,
+                "mode": mode,
+                "lecture": lecture.title,
+                "sources": sources,
+                "history": [
+                    {"role": c.role, "text": c.text} for c in reversed(history)
+                ],
+            },
+        )
     )
-    answer, ids = result.get("answer"), result.get("source_ids", [])
-    if (
-        not isinstance(answer, str)
-        or not isinstance(ids, list)
-        or not set(ids) <= {s["id"] for s in sources}
-    ):
-        raise ProviderError("답변 또는 출처 형식을 확인할 수 없습니다.")
-    if mode == "sources" and not ids:
+    object_value(result)
+    answer = string_value(result.get("answer"), allow_empty=True)
+    ids = source_ids(
+        result.get("source_ids", []), {s["id"] for s in sources}, required=False
+    )
+    if mode in ("sources", "hint") and not ids:
         answer = "선택한 강의자료에서 충분한 근거를 확인하지 못했습니다. 질문 범위를 좁히거나 자료를 추가해 주세요."
-    if mode == "background" and result.get("additional_explanation"):
-        answer += "\n\n[자료 밖의 추가 설명]\n" + str(result["additional_explanation"])
+    elif not answer.strip() and ids:
+        raise ProviderError("AI 답변이 비어 있습니다.")
+    extra = string_value(result.get("additional_explanation", ""), allow_empty=True)
+    if mode == "background":
+        if not ids:
+            answer = "선택한 강의자료에서 충분한 근거를 확인하지 못했습니다."
+        if extra:
+            answer += "\n\n[자료 밖의 추가 설명 · 정확성 별도 확인 필요]\n" + extra
+    # Lock and compare the exact evidence versions after the network call.
+    current = {
+        s.id: s.revision
+        for s in Segment.query.filter(Segment.user_id == g.user.id, Segment.id.in_(ids))
+        .populate_existing()
+        .with_for_update()
+        .all()
+    }
+    if any(current.get(s["id"]) != s["revision"] for s in sources if s["id"] in ids):
+        abort(409, "답변 생성 중 원문이 수정되거나 삭제되었습니다. 다시 질문해 주세요.")
     db.session.add(
         Chat(user_id=g.user.id, lecture_id=key, role="user", text=question, mode=mode)
     )
