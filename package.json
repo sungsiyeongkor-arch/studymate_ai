@@ -1,0 +1,10 @@
+{
+  "name": "studymate-ai-ui",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "format": "prettier --write studymate/static/**/*.js studymate/static/**/*.css studymate/templates/*.html",
+    "format:check": "prettier --check studymate/static/**/*.js studymate/static/**/*.css studymate/templates/*.html"
+  },
+  "devDependencies": { "prettier": "3.6.2" }
+}

@@ -1,0 +1,12 @@
+.git
+.env
+.env.*
+instance
+legacy
+__pycache__
+.pytest_cache
+tests
+test-results
+*.db
+README(1).md
+.tools

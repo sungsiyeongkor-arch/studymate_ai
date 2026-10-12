@@ -40,3 +40,12 @@ instance/
 
 # Logs
 *.log
+.pytest_cache/
+test-results/
+playwright-report/
+node_modules/
+README(1).md
+.env.*
+!.env.example
+*.sqlite*
+.tools/

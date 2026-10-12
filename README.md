@@ -1,216 +1,89 @@
-# StudyMate AI 📚
+# StudyMate AI
 
-AI 기반 PDF 학습 보조 플랫폼입니다.  
-PDF를 업로드하면 AI가 **구조화된 요약 노트**(키워드·의미·비교표 포함)와 **예상 문제**를 자동으로 생성합니다.  
-Google 계정으로 로그인하면 모든 데이터가 계정에 저장되어 언제든 다시 확인할 수 있습니다.
+강의자료 · 필기 PDF · 녹음을 연결하고, 원문 확인에서 질문과 간격 복습까지 이어가는 학습 웹앱입니다. Goodnotes 같은 필기 앱에서 내보낸 PDF를 가져오며 자체 필기 편집기는 만들지 않습니다.
 
----
+**현재 상태: 로컬 실행 가능한 개발 버전.** 계정·자료·수정 이력·복습은 실제 DB에 저장됩니다. OpenAI API 키가 없으면 AI 결과를 만들어내지 않고 설정 필요 상태를 표시합니다. 외부 API의 실제 인식 품질과 공개 배포는 아직 검증되지 않았습니다.
 
-## 주요 기능 (NEW)
+## 시작하기
 
-| 기능 | 설명 |
-|------|------|
-| Google 로그인 | Google OAuth로 로그인 → 데이터가 계정에 귀속 |
-| PDF 업로드 | 드래그 & 드롭 또는 파일 선택 (최대 16 MB) |
-| AI 요약 노트 | AI가 자동으로 분량·구조 결정 (키워드·의미·비교표·callout 포함) |
-| AI 예상 문제 | 객관식 문제 자동 생성 + 정답·해설 포함 |
-| 자료 관리 | 폴더별 파일 정리, 검색, 정렬 |
-| 최근 활동 기록 | 로그인 후 자동 기록, 대시보드에서 확인 |
-| 다크모드 | 다크/라이트 테마 전환 |
+Python 3.12 이상을 권장합니다. 프로젝트 루트에서:
 
----
-
-## 기술 스택
-
-- **백엔드**: Python 3.10+ / Flask + Flask-SQLAlchemy + Flask-Login
-- **데이터베이스**: SQLite (기본) / PostgreSQL (옵션)
-- **인증**: Google OAuth 2.0 (Authlib)
-- **AI**: OpenAI ChatGPT API (`gpt-4o-mini`)
-- **PDF 처리**: pdfplumber
-- **프론트엔드**: HTML / CSS / Vanilla JavaScript (Jinja2 템플릿)
-
----
-
-## 설치 및 실행
-
-### 1. 저장소 클론
-
-```bash
-git clone https://github.com/sungsiyeongkor-arch/studymate_ai.git
-cd studymate_ai
+```powershell
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+Copy-Item .env.example .env
+.\.venv\Scripts\python.exe -m flask --app app db upgrade
+.\scripts\start-local.ps1
 ```
 
-### 2. 가상환경 생성 및 활성화
+브라우저에서 <http://127.0.0.1:5000>에 접속해 계정을 만듭니다. PowerShell 스크립트 실행이 제한된 환경에서는 터미널 두 개에서 각각 아래를 실행하세요.
 
-```bash
-python -m venv venv
-# macOS/Linux
-source venv/bin/activate
-# Windows
-venv\Scripts\activate
+```powershell
+# 터미널 1: 웹 서버
+.\.venv\Scripts\python.exe -m waitress --listen=127.0.0.1:5000 app:app
+# 터미널 2: 자료 처리 작업자
+.\.venv\Scripts\python.exe -m flask --app app worker
 ```
 
-### 3. 의존성 설치
+macOS/Linux에서는 `.venv/bin/python`을 사용합니다. 웹 서버만 실행하면 자료 처리 작업은 대기합니다. 기본 DB와 업로드 파일은 `instance/`에 보관되며 Git에서 제외됩니다.
 
-```bash
-pip install -r requirements.txt
+체험 자료를 원하면 **로컬 개발 환경에서만** `python scripts/seed-demo.py`를 실행합니다. `demo@studymate.test / local-demo-only-2026` 계정과 수동 작성한 체험 카드가 생성됩니다. 운영 DB에서는 사용하지 마세요. 기본 설치가 자동으로 체험 계정을 만들지는 않습니다.
+
+## 사용 흐름
+
+1. 내 과목 → 강의 추가 → 주제·단원·소주제를 입력합니다.
+2. PDF/PPTX/DOCX/TXT를 먼저 업로드합니다. 자료 처리 완료 후 전문용어와 발음·연관어를 확인합니다.
+3. 강의 녹음 파일을 올립니다. 4MB 조각 업로드와 구간별 처리 기록으로 업로드·처리를 이어갑니다.
+4. PDF의 작은 손글씨 영역을 선택해 원본에서 크게 렌더링합니다. AI 판독 제안과 문맥 제안을 구분해서 확인·수정합니다.
+5. 요약·핵심 포인트, 개념 관계도, 인출 카드를 생성하거나 직접 카드를 만듭니다.
+6. 강의 자료를 근거로 챗봇에게 질문하고 출처로 이동합니다. 정답을 보기 전 회상한 뒤 자가 평가로 다음 복습 간격을 정합니다.
+
+## 구현된 기능과 범위
+
+| 영역 | 현재 동작 |
+|---|---|
+| 계정·과목·강의 | 비밀번호 해시, 세션, CSRF, 사용자별 자료 접근 검사 |
+| 자료 수집 | PDF/PPTX/DOCX/TXT/MD, 지원 음성 파일; 최대 512MB, PDF 1,000쪽, TXT 10MB |
+| 업로드 | 4MB 조각, 서버 상태 조회, 같은 파일 재선택 시 전송 재개, 내용 형식 검증 |
+| 추출·수정 | PDF 페이지·PPT 슬라이드별 텍스트, 불가독 페이지 표시, 수정 버전 보존, 충돌 감지 |
+| 작은 필기 판독 | 원본 PDF 영역 렌더링, 이미지 API 판독, 문맥 후보 분리, 직접 확인 후 저장 |
+| 필체 개인화 | 동의한 사용자의 최근 확인 예시 최대 3개 참조; 신경망 재학습은 아님 |
+| 긴 녹음 | FFmpeg로 5분씩 분할, 2초 경계 중첩, 최대 12시간, 절대 시간표시, 구간 재시도 |
+| 받아쓰기 맥락 | 강의 주제·확인된 전문용어/발음/연관어·관련 자료 발췌를 사전 참고 |
+| AI 노트 | 구간별 요약과 핵심 포인트, 3/5/7문장 요청, 한/영, 1~20개 수량 설정 |
+| 개념 관계도 | 개념–관계–개념, 성립 조건, 원문 출처; 관계 가리고 설명하기 |
+| 질문 | 자료 근거 / 일반 지식 구분 / 힌트 모드, 선택 영역 질문, 출처 링크 |
+| 복습 | 인출 카드, 정답 공개 후 자가 평가, 확신도·힌트 기록, 간격 조절, 오류 카드 보류 |
+| 기록 관리 | 자료 검색, 원본 다운로드, 전사 텍스트·노트·전체 학습 기록 내보내기, 자료·필체 예시 삭제 |
+| 개발·운영 | 기능별 API 모듈, 독립 서비스 계층, Alembic 마이그레이션, SQLite/PostgreSQL, 작업자, Docker Compose, CI |
+
+## 직접 준비할 것
+
+- **OpenAI 계정/API 키와 결제 설정**: `.env`의 `OPENAI_API_KEY`에 입력합니다. ChatGPT 앱 구독과 서버 API 사용 설정은 별도로 확인하세요. 키는 브라우저·채팅·GitHub에 넣지 않습니다.
+- **모델 사용 권한**: `OPENAI_MODEL`은 텍스트/이미지를 지원하는 Responses 모델 ID입니다. 예시는 `gpt-6-astra`; 사용 가능한 모델을 계정에서 확인하세요. 시간표시 받아쓰기 어댑터는 `whisper-1`을 지원합니다.
+- **FFmpeg**: 긴 녹음 처리를 위해 `ffmpeg`와 `ffprobe`가 PATH에 있어야 합니다. Docker 이미지에는 포함됩니다. Windows용 프로젝트 내부 설치는 `python scripts/install-ffmpeg.py`로 실행할 수 있습니다.
+- **공개 서비스 운영 계정/도메인**: 원하는 서버를 준비한 후 [배포 안내](docs/DEPLOYMENT.md)를 따릅니다. 현재 저장소를 GitHub Pages에 올리는 것만으로 Python 서버가 실행되지는 않습니다.
+
+## 한계와 후속 개발
+
+이 버전의 개인화는 확인 예시 참조와 규칙 기반 복습입니다. **필체 모델 파인튜닝, 개인 망각곡선 학습, 자동 채점 정확도, 수 시간 실녹음의 인식 품질을 검증 완료한 제품이 아닙니다.** 긴 녹음의 분할·재개 제어는 테스트하며, 실제 API 품질 검증은 키와 허가된 음성 표본이 필요합니다.
+
+Whisper의 짧은 프롬프트 한도 때문에 사전 자료 전체를 음성 모델에 입력하지 않습니다. 주제·용어·자료의 짧은 힌트를 사용합니다. 추가 자료를 업로드해도 기존 완료 전사는 자동 변경하지 않습니다. 수정된 전사로 새 노트를 만들 수 있습니다.
+
+브라우저 녹음은 메모리에 보관하므로 창 종료·기기 절전에서 복구되지 않습니다. 긴 강의는 별도 녹음 앱으로 저장한 파일을 업로드하세요. `.ppt`와 `.hwp`는 PDF/PPTX로 변환해야 합니다. 검색은 현재 어휘 기반이며 의미 검색은 후속 확장 지점입니다. 이메일 인증·비밀번호 재설정·기관 SSO는 미구현입니다.
+
+## 문서와 개발
+
+- [세부 기획 및 요구사항 대응표](docs/PRODUCT_SPEC.md)
+- [구조·DB·재시도와 확장 지점](docs/ARCHITECTURE.md)
+- [설정·배포·백업·복구](docs/DEPLOYMENT.md)
+- [검증 범위와 남은 검증](docs/VALIDATION.md)
+- [직접 검수 체크리스트](docs/ACCEPTANCE.md)
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
+.\.venv\Scripts\python.exe -m pytest -q
+.\.venv\Scripts\python.exe -m flask --app app db check
 ```
 
-### 4. 환경 변수 설정
-
-```bash
-cp .env.example .env
-```
-
-`.env` 파일을 열고 아래 항목을 설정합니다:
-
-```env
-# 필수: OpenAI API 키
-OPENAI_API_KEY=sk-...your-key-here...
-
-# 필수: Flask 세션 비밀 키 (무작위 문자열)
-SECRET_KEY=replace_with_a_long_random_string
-
-# Google OAuth (로그인 기능 사용 시 필수 – 아래 설정 가이드 참조)
-GOOGLE_CLIENT_ID=your_google_client_id
-GOOGLE_CLIENT_SECRET=your_google_client_secret
-```
-
-> **Google OAuth를 설정하지 않으면** 로그인 페이지에서 경고가 표시됩니다.  
-> OpenAI API 키가 없어도 앱은 실행되나 AI 분석 기능이 비활성화됩니다.
-
-### 5. 서버 실행
-
-```bash
-python app.py
-# 또는 디버그 모드
-FLASK_DEBUG=1 python app.py
-```
-
-브라우저에서 [http://localhost:5000](http://localhost:5000) 에 접속합니다.
-
----
-
-## Google OAuth 설정
-
-Google 로그인을 활성화하려면 아래 단계를 따르세요.
-
-### 1. Google Cloud 프로젝트 생성
-
-1. [Google Cloud Console](https://console.cloud.google.com/) 에 접속합니다.
-2. 새 프로젝트를 생성하거나 기존 프로젝트를 선택합니다.
-
-### 2. OAuth 동의 화면 구성
-
-1. **APIs & Services → OAuth consent screen** 으로 이동합니다.
-2. **User Type**: `External` 선택 → 저장
-3. 앱 이름 (예: `StudyMate AI`), 이메일을 입력하고 저장합니다.
-
-### 3. OAuth 2.0 클라이언트 ID 생성
-
-1. **APIs & Services → Credentials → Create Credentials → OAuth client ID**
-2. **Application type**: `Web application`
-3. **Authorized redirect URIs** 에 아래를 추가:
-   - 로컬 개발: `http://localhost:5000/auth/callback`
-   - 프로덕션: `https://yourdomain.com/auth/callback`
-4. 생성 후 **Client ID** 와 **Client Secret** 을 복사합니다.
-
-### 4. `.env` 파일에 입력
-
-```env
-GOOGLE_CLIENT_ID=1234567890-xxx.apps.googleusercontent.com
-GOOGLE_CLIENT_SECRET=GOCSPX-xxxxxxxxxxxxxxxxxxxx
-```
-
-### 5. 서버 재시작
-
-```bash
-python app.py
-```
-
----
-
-## 환경 변수
-
-| 변수 | 설명 | 기본값 |
-|------|------|--------|
-| `OPENAI_API_KEY` | OpenAI API 키 (필수) | — |
-| `SECRET_KEY` | Flask 세션 비밀 키 (필수) | 랜덤 생성 |
-| `GOOGLE_CLIENT_ID` | Google OAuth 클라이언트 ID | — |
-| `GOOGLE_CLIENT_SECRET` | Google OAuth 클라이언트 시크릿 | — |
-| `DATABASE_URL` | DB 연결 문자열 | `sqlite:///studymate.db` |
-| `OPENAI_MODEL` | 사용할 OpenAI 모델 | `gpt-4o-mini` |
-| `MAX_CHARS` | 모델에 전달하는 최대 문자 수 | `11900` |
-| `TEMPERATURE` | 모델 창의성 (0.0~1.0) | `0.3` |
-| `FLASK_DEBUG` | Flask 디버그 모드 | `0` |
-
----
-
-## 프로젝트 구조
-
-```
-studymate_ai/
-├── app.py               # Flask 애플리케이션 (라우트 + AI 서비스)
-├── models.py            # NEW: SQLAlchemy 데이터 모델
-├── auth.py              # NEW: Google OAuth 인증 라우트
-├── requirements.txt     # Python 의존성
-├── .env.example         # 환경 변수 템플릿
-├── .gitignore
-├── README.md
-├── studymate.db         # SQLite DB (자동 생성, gitignore됨)
-├── uploads/             # 업로드 파일 저장 (자동 생성, gitignore됨)
-├── templates/
-│   ├── base.html        # NEW: 공통 레이아웃 (사이드바 + 상단바)
-│   ├── login.html       # NEW: 로그인 페이지
-│   ├── home.html        # NEW: 홈 대시보드
-│   ├── upload.html      # NEW: 자료 업로드 페이지
-│   ├── notes.html       # NEW: 요약 노트 목록
-│   ├── note_detail.html # NEW: 요약 노트 상세
-│   ├── quizzes.html     # NEW: 예상 문제 목록
-│   ├── quiz_detail.html # NEW: 예상 문제 상세
-│   ├── materials.html   # NEW: 자료 관리
-│   ├── profile.html     # NEW: 개인 설정
-│   └── index.html       # 기존 단일 페이지 (레거시, /analyze 호환)
-└── static/
-    ├── css/
-    │   ├── style.css    # 기존 CSS (공통 테마)
-    │   └── dashboard.css # NEW: 대시보드 레이아웃 스타일
-    └── js/
-        ├── main.js      # 기존 JS (레거시)
-        ├── dashboard.js # NEW: 사이드바·테마·드롭다운
-        └── upload.js    # NEW: 업로드 폼 로직
-```
-
----
-
-## AI 요약 노트 형식 (NEW)
-
-사용자가 문장 수를 설정하지 않습니다. AI가 문서의 복잡도와 분량에 따라 자동으로 결정합니다.
-
-출력 구조:
-
-```json
-{
-  "title": "문서 제목",
-  "overview": "한 단락 개요",
-  "keywords": [
-    { "term": "키워드", "meaning": "정의/의미", "related": ["관련개념"] }
-  ],
-  "sections": [
-    { "title": "섹션명", "type": "text|list|table|callout", "content": "..." }
-  ],
-  "comparison_table": { "headers": ["항목"], "rows": [["내용"]] },
-  "key_takeaways": ["핵심 포인트 1", "핵심 포인트 2"]
-}
-```
-
-이 구조는 UI에서 **키워드 칩**, **비교표**, **callout 블록** 등으로 직관적으로 렌더링됩니다.
-
----
-
-## 주의사항
-
-- 이미지 기반 PDF(스캔된 문서)는 텍스트 추출이 불가능합니다.
-- OpenAI API 사용 요금이 발생할 수 있습니다.
-- `.env` 파일의 API 키와 시크릿은 절대 공개 저장소에 커밋하지 마세요.
-- SQLite는 로컬 개발용입니다. 프로덕션에서는 `DATABASE_URL`을 PostgreSQL로 변경하세요.
+기존 버전은 `legacy/`에 보존했습니다. 새 앱은 `sm_` 테이블을 별도 DB에 생성하며 기존 DB를 자동 변환하거나 덮어쓰지 않습니다. 기존 OAuth·공유 화면은 활성 앱에 연결되지 않습니다.
