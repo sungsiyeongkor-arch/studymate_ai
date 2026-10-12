@@ -51,6 +51,9 @@ def backup(url, output):
             capture_output=True,
         )
         if result.returncode:
+            message = result.stderr.decode("utf-8", errors="replace")
+            if os.getenv("CI") == "true" and (parsed.database or "").endswith("_test"):
+                print(message.replace(parsed.password or "test-only", "[REDACTED]"), file=sys.stderr)
             raise RuntimeError(
                 "pg_dump failed; check client version, network and database permissions. No credentials were logged."
             )

@@ -38,7 +38,9 @@ jobs:
           RESTORE_DATABASE_URL: postgresql+psycopg://postgres:test-only@localhost:5432/studymate_restore_check
           PGPASSWORD: test-only
         run: |
+          sudo apt-get install -y postgresql-client-17
           export PATH=/usr/lib/postgresql/17/bin:$PATH
+          pg_dump --version
           flask --app app db upgrade
           flask --app app search-index
           flask --app app db check
