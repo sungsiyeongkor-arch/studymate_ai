@@ -56,3 +56,5 @@ jobs:
         with:
           node-version: '22'
       - run: find studymate/static -name '*.js' -exec node --check {} \;
+
+      - run: node --test tests/upload-client.test.mjs
