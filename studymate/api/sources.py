@@ -3,6 +3,7 @@ from sqlalchemy import select
 from ..models import User, JobBatch
 from ..services import quota
 from ..services.pagination import page
+from ..services.validation import object_value, string_value, string_list
 from .common import (
     Artifact,
     Citation,
@@ -158,6 +159,7 @@ def recognize(key):
     if material.kind != "pdf" or not segment.page:
         abort(400, "PDF 영역을 선택해 주세요.")
     lecture = owned(Lecture, material.lecture_id)
+    expected_revision = segment.revision
     examples = []
     images = [render_pdf(material, segment.page, segment.bbox, scale=5)]
     if g.user.personalization:
@@ -182,9 +184,17 @@ def recognize(key):
         {"topic": lecture.topic, "context": context, "confirmed_examples": examples},
         images,
     )
-    if not isinstance(result.get("visual_text"), str):
-        raise ProviderError("판독 결과 형식 오류")
-    return {"proposal": result, "segment_revision": segment.revision}
+    object_value(result)
+    string_value(result.get("visual_text"), 100000, allow_empty=True)
+    for field in ("contextual_suggestion", "explanation"):
+        string_value(result.get(field, ""), allow_empty=True)
+    string_list(result.get("uncertain_spans", []))
+    current = (
+        Segment.query.filter_by(id=key, user_id=g.user.id).populate_existing().first()
+    )
+    if current is None or current.revision != expected_revision:
+        abort(409, "판독 중 원문이 수정되거나 삭제되었습니다. 다시 판독해 주세요.")
+    return {"proposal": result, "segment_revision": expected_revision}
 
 
 @api.route("/segments/<key>", methods=["GET", "PATCH"])

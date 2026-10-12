@@ -1,6 +1,7 @@
 """Durable DB queue. CAS leases prevent duplicate claim; checkpoints allow resume."""
 
 import json
+import math
 import shutil
 import subprocess
 import tempfile
@@ -182,7 +183,7 @@ def process_audio(job):
         job.payload = dict(payload)
     # Each 5 minute mono PCM part is ~9.6MB, below provider limits.
     length = 300
-    total = int((duration + length - 1) // length)
+    total = math.ceil(duration / length)
     completed = set(payload.get("completed_chunks", []))
     with tempfile.TemporaryDirectory(prefix="studymate-audio-") as temp:
         for index in range(total):

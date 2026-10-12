@@ -202,7 +202,15 @@ def test_artifact_generation_atomic_and_stale(app, client, monkeypatch):
         "call_json",
         lambda *a, **k: {
             "title": "Memory quiz",
-            "questions": [{"question": "Q", "answer": "A", "source_ids": [sid]}],
+            "questions": [
+                {
+                    "question": "Q",
+                    "answer": "A",
+                    "options": ["A", "B", "C", "D"],
+                    "kind": "multiple_choice",
+                    "source_ids": [sid],
+                }
+            ],
         },
     )
     client.send("POST", "/lectures/" + l["id"] + "/generate", {"kind": "quiz"})
