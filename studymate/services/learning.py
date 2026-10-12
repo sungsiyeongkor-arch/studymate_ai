@@ -33,7 +33,7 @@ def generate_batch(user_id, lecture_id, kind, sources, options):
     allowed = {item["id"]: item["revision"] for item in sources}
     prompt = {
         "summary": 'Return {"title":string,"sections":[{"heading":string,"text":string,"source_ids":[string]}]}. The first section is the summary with options.summary_sentences sentences. Subsequent sections are options.key_points key points with conditions and examples. Cite supplied IDs. Preserve uncertainty.',
-        "quiz": 'Return {"title":string,"questions":[{"question":string,"answer":string,"explanation":string,"concept":string,"kind":"recall","source_ids":[string]}]}. Generate options.question_count unambiguous recall/application questions grounded only in the sources.',
+        "quiz": 'Return {"title":string,"questions":[{"question":string,"answer":string,"options":[string,string,string,string],"explanation":string,"concept":string,"kind":"multiple_choice","source_ids":[string]}]}. Generate options.question_count unambiguous multiple-choice recall/application questions grounded only in the sources. Exactly one option is correct. The answer must exactly equal that option. Vary the correct option position.',
         "concepts": 'Return {"title":string,"nodes":[{"id":string,"label":string}],"edges":[{"from":string,"to":string,"label":string,"condition":string,"source_ids":[string]}]}. Build at most 10 nodes. Label each relation, distinguish causation from association, include conditions.',
         "terms": 'Return {"terms":[{"word":string,"pronunciation":string,"meaning":string,"related":[string],"source_ids":[string]}]}. Extract up to 25 specialist terms actually present. Do not invent synonyms; related words are not replacements.',
     }[kind]
@@ -87,6 +87,16 @@ def generate_batch(user_id, lecture_id, kind, sources, options):
             for k in ("question", "answer")
         ):
             raise ProviderError("문제 형식 오류")
+        if kind == "quiz" and item.get("options"):
+            choices = item["options"]
+            if (
+                not isinstance(choices, list)
+                or not 2 <= len(choices) <= 6
+                or not all(isinstance(v, str) and v.strip() for v in choices)
+                or len(set(choices)) != len(choices)
+                or item["answer"] not in choices
+            ):
+                raise ProviderError("객관식 선택지와 정답을 확인할 수 없습니다.")
     if kind == "concepts":
         nodes = value.get("nodes", [])
         node_ids = {n.get("id") for n in nodes if isinstance(n, dict)}
@@ -138,6 +148,7 @@ def generate_batch(user_id, lecture_id, kind, sources, options):
                 explanation=str(item.get("explanation", "")),
                 concept=str(item.get("concept", ""))[:160],
                 kind=str(item.get("kind", "recall"))[:30],
+                options=item.get("options", []),
             )
             db.session.add(card)
             db.session.flush()

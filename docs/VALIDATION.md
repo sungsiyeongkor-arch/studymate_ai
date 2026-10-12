@@ -4,12 +4,14 @@
 
 ## 자동 검증
 
-`python -m pytest -q`의 14개 테스트가 Windows / Python 3.12 / SQLite에서 통과했습니다. 제한된 실행 환경에서는 쓰기 가능한 임시 경로를 `--basetemp=test-results/pytest-N`으로 지정했습니다.
+`python -m pytest -q`의 18개 테스트가 Windows / Python 3.12 / SQLite에서 통과했습니다. 제한된 실행 환경에서는 쓰기 가능한 임시 경로를 `--basetemp=test-results/pytest-N`으로 지정했습니다.
 
 - 인증·CSRF·계정 간 자료/원본 URL 접근 차단
 - 조각 업로드 완료 요청의 중복 처리, 자료 추출, 원문 수정 이력·동시 수정 충돌
+- PPTX/DOCX 실제 생성 파일의 텍스트 추출과 원문 종류 반환
 - 위장 PDF·파일 용량 제한, PDF 페이지 렌더링·영역 범위 검사
 - 개인화 동의·본인 필기 확인·예시 저장과 수정 후 무효화
+- 객관식 정답 서버 계산·오답 점수 조작 차단·선택지 검증
 - 복습 요청 중복 방지·상태 버전·힌트 반영·오류 카드 통계 제외
 - API 키가 없을 때 작업 보류 및 가짜 결과 미생성
 - 출처 버전·원본 수정 후 노트 stale와 복습 제외
@@ -22,7 +24,7 @@
 
 Alembic 최초 마이그레이션 적용과 `flask db check`가 성공했습니다. `pip check`, 브라우저 모듈의 `node --check`, `git diff --check`를 확인했습니다.
 
-GitHub Actions에 SQLite·PostgreSQL 테스트와 마이그레이션 검사를 구성했습니다. CI 결과는 해당 커밋의 Actions 실행을 확인하세요. 설정 파일이 존재한다는 것만으로 PostgreSQL/컨테이너 실행을 검증했다고 보지 않습니다.
+GitHub Actions에서 SQLite·PostgreSQL 테스트와 마이그레이션 검사가 성공했습니다. 최종 커밋의 결과는 PR #4의 Checks에서 확인할 수 있습니다. 실제 공개 배포나 전체 Docker Compose 실행을 검증했다는 뜻은 아닙니다.
 
 ## 브라우저에서 확인한 흐름
 
@@ -34,7 +36,8 @@ GitHub Actions에 SQLite·PostgreSQL 테스트와 마이그레이션 검사를 �
 4. 추출 원문과 수정 이력 표시 → 확인 저장 → 확인된 원문 상태
 5. 요약의 목적·언어·문장 수·핵심 포인트 설정 모달
 6. 데스크톱 1440px / 모바일 390px 화면에서 문서 전체의 가로 넘침 없음
-7. 브라우저 콘솔의 오류 기록 없음
+7. 직접 객관식 카드 생성 → 오답 선택 → 서버 채점 0점 → 오답 노트 → 오늘 재복습
+8. 브라우저 콘솔의 오류 기록 없음
 
 화면: [데스크톱](screenshots/dashboard-desktop.jpg), [모바일](screenshots/dashboard-mobile.jpg). 표시된 과목과 카드는 수동으로 만든 체험 데이터이며 실제 사용자의 성과나 AI 호출 결과가 아닙니다.
 

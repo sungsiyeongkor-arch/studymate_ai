@@ -37,6 +37,19 @@ def cards():
         }
     data = body()
     lecture = owned(Lecture, data.get("lecture_id"))
+    choices = data.get("options", [])
+    if not isinstance(choices, list) or (
+        choices
+        and (
+            not 2 <= len(choices) <= 6
+            or not all(isinstance(v, str) and 0 < len(v) <= 1000 for v in choices)
+            or len(set(choices)) != len(choices)
+            or data.get("answer") not in choices
+        )
+    ):
+        abort(
+            400, "선택지는 2~6개이며 정답과 정확히 일치하는 항목이 하나 있어야 합니다."
+        )
     row = Card(
         user_id=g.user.id,
         lecture_id=lecture.id,
@@ -44,6 +57,8 @@ def cards():
         answer=text(data, "answer", 8000, True),
         explanation=text(data, "explanation", 8000),
         concept=text(data, "concept", 160),
+        options=choices,
+        kind="multiple_choice" if choices else "recall",
     )
     db.session.add(row)
     db.session.flush()
@@ -99,6 +114,16 @@ def review(key):
     state = ReviewState.query.filter_by(card_id=key).one()
     if data.get("state_version") != state.version:
         abort(409, "복습 상태가 변경되었습니다. 목록을 새로고침해 주세요.")
+    answer = text(data, "answer", 8000)
+    correct = None
+    if card.options:
+        selected = data.get("selected_index")
+        if type(selected) is not int or not 0 <= selected < len(card.options):
+            abort(400, "선택지를 골라 주세요.")
+        answer = card.options[selected]
+        correct = answer == card.answer
+        if not correct:
+            grade = 0
     previous = public(state)
     changes = schedule(state, grade, bool(data.get("hint_used")), now())
     count = ReviewState.query.filter_by(id=state.id, version=state.version).update(
@@ -111,11 +136,17 @@ def review(key):
         user_id=g.user.id,
         card_id=key,
         request_key=request_key,
-        answer=text(data, "answer", 8000),
+        answer=answer,
         grade=grade,
         hint_used=bool(data.get("hint_used")),
         confidence=confidence,
-        snapshot={"question": card.question, "answer": card.answer, "kind": card.kind},
+        snapshot={
+            "question": card.question,
+            "answer": card.answer,
+            "kind": card.kind,
+            "options": card.options,
+            "correct": correct,
+        },
         previous_state=previous,
         next_due=changes["due"],
     )
@@ -132,5 +163,44 @@ def report_card(key):
     state = ReviewState.query.filter_by(card_id=key).one()
     state.interval, state.successes, state.lapses, state.ease = 0, 0, 0, 2.3
     state.version += 1
+    db.session.commit()
+    return {"ok": True}
+
+
+@api.get("/reviews/mistakes")
+def mistakes():
+    rows = (
+        Attempt.query.filter_by(user_id=g.user.id, invalidated=False)
+        .order_by(Attempt.created_at.desc())
+        .limit(500)
+        .all()
+    )
+    seen, items = set(), []
+    for attempt in rows:
+        if attempt.card_id in seen:
+            continue
+        seen.add(attempt.card_id)
+        if attempt.grade != 0:
+            continue
+        card = owned(Card, attempt.card_id)
+        artifact = owned(Artifact, card.artifact_id) if card.artifact_id else None
+        items.append(
+            {
+                "attempt": public(attempt),
+                "card": public(card),
+                "stale": bool(artifact and artifact.stale),
+            }
+        )
+    return {"items": items}
+
+
+@api.post("/cards/<key>/revisit")
+def revisit(key):
+    card = owned(Card, key)
+    if card.suspended or (card.artifact_id and owned(Artifact, card.artifact_id).stale):
+        abort(409, "보류되거나 원본이 변경된 문제입니다. 새 문제를 만들어 주세요.")
+    ReviewState.query.filter_by(card_id=key).update(
+        {"due": now(), "version": ReviewState.version + 1}
+    )
     db.session.commit()
     return {"ok": True}

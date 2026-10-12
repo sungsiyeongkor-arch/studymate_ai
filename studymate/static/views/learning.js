@@ -11,14 +11,34 @@ import {
   date,
 } from "../lib/ui.js";
 import { bindForm, refresh } from "../app.js";
+export async function mistakesView() {
+  const d = await api("/reviews/mistakes");
+  $("#content").innerHTML =
+    `<div class="page-heading"><div><span class="eyebrow">LEARN FROM MISTAKES</span><h1>오답 노트</h1><p>틀린 객관식과 ‘다시 학습’으로 평가한 카드를 돌아보세요.</p></div></div><div class="notes-grid">${d.items.map(({ card: c, attempt: a, stale }) => `<article class="panel stack"><h3>${esc(c.question)}</h3><p class="small">최근 복습 · ${date(a.created_at)}</p><div><strong>내 답변</strong><p class="prose">${esc(a.answer || "기록하지 않음")}</p></div><details><summary>정답과 해설 확인</summary><p class="prose">${esc(c.answer)}\n${esc(c.explanation)}</p></details>${stale ? '<div class="notice">근거가 수정되었습니다. 강의에서 새 문제를 생성하세요.</div>' : `<button class="btn primary revisit" data-id="${c.id}">오늘 다시 복습하기</button>`}<a class="text-link" href="#/lecture/${c.lecture_id}">강의자료 확인 →</a></article>`).join("") || empty("다시 확인할 카드가 없어요", "최근 500개 평가에서 카드별 마지막 결과를 확인합니다. 오류로 신고한 평가는 제외합니다.")}</div>`;
+  $$(".revisit").forEach(
+    (b) =>
+      (b.onclick = () =>
+        busy(b, async () => {
+          await api("/cards/" + b.dataset.id + "/revisit", { method: "POST" });
+          location.hash = "/review";
+        })),
+  );
+}
 export async function reviewView() {
   const d = await api("/reviews/due");
   let index = 0;
+  let scored = 0,
+    correctCount = 0;
   const render = () => {
     const item = d.items[index];
     if (!item) {
       $("#content").innerHTML =
         `<div class="page-heading"><div><span class="eyebrow">TODAY’S RECALL</span><h1>오늘의 복습</h1></div></div>${empty(index ? "이번 복습을 마쳤어요" : "지금 복습할 카드가 없어요", "강의의 학습 노트 탭에서 AI 문제를 생성하거나 직접 카드를 만들어보세요.", '<a class="btn primary" href="#/library">내 과목으로</a>')}<p class="small">한 번에 최대 30개의 예정 카드를 표시합니다. 더 있다면 새로고침하세요.</p>`;
+      if (scored)
+        $("#content").insertAdjacentHTML(
+          "beforeend",
+          `<section class="panel review-panel-main"><h2>객관식 결과 · ${correctCount} / ${scored}</h2><p>${Math.round((correctCount / scored) * 100)}점 · 자유 응답 자가 평가는 이 점수에서 제외합니다.</p></section>`,
+        );
       return;
     }
     const { card: c, state: s } = item;
@@ -31,8 +51,18 @@ export async function reviewView() {
       $("#hint-text").innerHTML =
         `<div class="notice info">${c.concept ? `‘${esc(c.concept)}’의 정의, 성립 조건, 예시를 하나씩 떠올려보세요.` : "질문의 핵심 개념을 정의한 뒤, 강의에서 본 예시와 연결해보세요."}</div>`;
     };
+    if (c.options?.length) {
+      $("#review-answer").parentElement.outerHTML =
+        `<fieldset class="choices"><legend>선택지</legend><div class="stack" id="choices">${c.options.map((v, i) => `<label class="check-label"><input type="radio" name="choice" value="${i}"> ${esc(v)}</label>`).join("")}</div></fieldset>`;
+    }
     $("#reveal").onclick = () => {
       if (revealed) return;
+      const chosen = $("input[name=choice]:checked");
+      if (c.options?.length && !chosen) {
+        toast("정답을 보기 전에 선택지를 골라 주세요.");
+        return;
+      }
+      if (chosen) $$("input[name=choice]").forEach((n) => (n.disabled = true));
       revealed = true;
       $("#confidence").disabled = true;
       $("#answer-section").innerHTML =
@@ -52,10 +82,15 @@ export async function reviewView() {
                     grade: Number(b.dataset.grade),
                     confidence: Number($("#confidence").value),
                     hint_used: hint,
-                    answer: $("#review-answer").value,
+                    answer: $("#review-answer")?.value || "",
+                    selected_index: chosen ? Number(chosen.value) : undefined,
                   },
                 });
                 toast("복습 저장 · 다음 예정 " + date(r.next_due));
+                if (typeof r.snapshot.correct === "boolean") {
+                  scored++;
+                  if (r.snapshot.correct) correctCount++;
+                }
                 index++;
                 render();
               } catch (e) {

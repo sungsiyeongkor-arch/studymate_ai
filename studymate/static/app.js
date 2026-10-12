@@ -11,7 +11,12 @@ import {
   badge,
 } from "./lib/ui.js";
 import { lectureView, materialView } from "./views/lecture.js";
-import { reviewView, settingsView, chatView } from "./views/learning.js";
+import {
+  reviewView,
+  settingsView,
+  chatView,
+  mistakesView,
+} from "./views/learning.js";
 let user, status;
 export const refresh = () => route();
 export const formData = (form) => Object.fromEntries(new FormData(form));
@@ -71,6 +76,7 @@ function shell(path) {
     ["/", "home", "학습 홈"],
     ["/library", "grid", "내 과목"],
     ["/review", "clock", "오늘의 복습"],
+    ["/mistakes", "book", "오답 노트"],
     ["/inbox", "flag", "확인할 내용"],
     ["/search", "search", "자료 검색"],
   ];
@@ -189,6 +195,7 @@ async function route() {
     else if (kind === "lecture") await lectureView(id, status);
     else if (kind === "material") await materialView(id, extra, status);
     else if (kind === "review") await reviewView();
+    else if (kind === "mistakes") await mistakesView();
     else if (kind === "settings") await settingsView(status);
     else if (kind === "chat") await chatView(id, status);
     else if (kind === "search" || kind === "inbox")

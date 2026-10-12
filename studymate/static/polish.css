@@ -4,6 +4,20 @@
   letter-spacing: 1.8px;
   color: #879481;
 }
+.choices {
+  border: 0;
+  padding: 0;
+  margin: 16px 0;
+}
+.choices legend {
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 12px;
+}
+input[type="radio"] {
+  width: auto;
+  accent-color: var(--green);
+}
 .nav-link {
   display: flex;
   align-items: center;

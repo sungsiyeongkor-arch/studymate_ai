@@ -211,9 +211,14 @@ export async function lectureView(id, status) {
       $("#manual-card").onclick = () => {
         modal(
           "인출 카드 만들기",
-          `<form id="card-form">${field("질문", "question")}<label>정답<textarea required name="answer"></textarea></label><label>해설<textarea name="explanation"></textarea></label><label>개념<input name="concept"></label><button class="btn primary" type="submit">복습에 추가</button></form>`,
+          `<form id="card-form">${field("질문", "question")}<label>정답<textarea required name="answer"></textarea></label><label>객관식 선택지 (선택 사항 · 한 줄에 하나)<textarea name="choices" placeholder="비워두면 자유 응답 카드입니다. 정답과 정확히 같은 선택지를 하나 넣어주세요."></textarea></label><label>해설<textarea name="explanation"></textarea></label><label>개념<input name="concept"></label><button class="btn primary" type="submit">복습에 추가</button></form>`,
         );
         bindForm("#card-form", async (v) => {
+          v.options = v.choices
+            .split("\n")
+            .map((s) => s.trim())
+            .filter(Boolean);
+          delete v.choices;
           await api("/cards", {
             method: "POST",
             body: { ...v, lecture_id: id },
@@ -406,7 +411,7 @@ async function editSegment(id, status, recognition) {
     p = recognition?.proposal;
   modal(
     p ? "판독 제안 확인" : "원문 확인 · 수정",
-    `<form id="segment-form" class="stack">${s.page ? `<img class="source-preview" src="/api/segments/${id}/image" alt="선택한 PDF 원본">` : ""}${p ? `<div class="notice"><strong>문맥에 따른 제안 (자동 적용되지 않음)</strong><p class="prose">${esc(p.contextual_suggestion)}</p><p>불확실한 부분: ${esc((p.uncertain_spans || []).join(", "))}</p><p>${esc(p.explanation)}</p></div>` : ""}<label>읽어낸 원문<textarea name="text" rows="8">${esc(p?.visual_text ?? s.text)}</textarea></label><label>수정 구분<select name="reason"><option value="transcription">원본을 그대로 읽어 수정</option><option value="content_edit">원문의 내용 자체를 편집</option></select></label>${s.bbox && status.personalization ? '<label class="check-label"><input type="checkbox" name="save_example">본인의 손글씨이며 원문을 확인했습니다. 필체 예시로 저장</label>' : ""}<p class="small">원본은 보존됩니다. 수정하면 관련 AI 노트는 재확인 상태로 바뀝니다.</p><button type="submit" class="btn primary">확인하고 저장</button><details><summary>수정 기록 ${d.revisions.length}개</summary>${d.revisions.map((r) => `<div class="revision"><strong>버전 ${r.number} · ${esc(r.author)}</strong><p class="prose">${esc(r.text)}</p></div>`).join("")}</details></form>`,
+    `<form id="segment-form" class="stack">${s.page && d.material_kind === "pdf" ? `<img class="source-preview" src="/api/segments/${id}/image" alt="선택한 PDF 원본">` : ""}${p ? `<div class="notice"><strong>문맥에 따른 제안 (자동 적용되지 않음)</strong><p class="prose">${esc(p.contextual_suggestion)}</p><p>불확실한 부분: ${esc((p.uncertain_spans || []).join(", "))}</p><p>${esc(p.explanation)}</p></div>` : ""}<label>읽어낸 원문<textarea name="text" rows="8">${esc(p?.visual_text ?? s.text)}</textarea></label><label>수정 구분<select name="reason"><option value="transcription">원본을 그대로 읽어 수정</option><option value="content_edit">원문의 내용 자체를 편집</option></select></label>${s.bbox && status.personalization ? '<label class="check-label"><input type="checkbox" name="save_example">본인의 손글씨이며 원문을 확인했습니다. 필체 예시로 저장</label>' : ""}<p class="small">원본은 보존됩니다. 수정하면 관련 AI 노트는 재확인 상태로 바뀝니다.</p><button type="submit" class="btn primary">확인하고 저장</button><details><summary>수정 기록 ${d.revisions.length}개</summary>${d.revisions.map((r) => `<div class="revision"><strong>버전 ${r.number} · ${esc(r.author)}</strong><p class="prose">${esc(r.text)}</p></div>`).join("")}</details></form>`,
   );
   bindForm("#segment-form", async (v) => {
     await api("/segments/" + id, {

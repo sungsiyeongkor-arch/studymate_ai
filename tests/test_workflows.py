@@ -271,3 +271,29 @@ def test_export_scoped_and_secret_free(app, client):
     assert r.status_code == 200
     assert len(r.json["sm_courses"]) == 1
     assert "password_hash" not in r.get_data(as_text=True)
+
+
+@pytest.mark.parametrize("kind", ["pptx", "docx"])
+def test_office_document_extraction_and_source_type(app, client, kind):
+    buffer = io.BytesIO()
+    if kind == "pptx":
+        from pptx import Presentation
+
+        doc = Presentation()
+        slide = doc.slides.add_slide(doc.slide_layouts[1])
+        slide.shapes.title.text = "Working memory"
+        slide.placeholders[1].text = "Practice retrieval."
+    else:
+        from docx import Document
+
+        doc = Document()
+        doc.add_paragraph("Working memory: Practice retrieval.")
+    doc.save(buffer)
+    lecture = client.setup_lecture()
+    _, response = client.upload(lecture, buffer.getvalue(), "source." + kind)
+    assert response.status_code == 201
+    extract(app)
+    source = client.send("GET", "/materials/" + response.json["id"]).json["segments"][0]
+    detail = client.send("GET", "/segments/" + source["id"]).json
+    assert detail["material_kind"] == kind
+    assert "Working memory" in detail["segment"]["text"]

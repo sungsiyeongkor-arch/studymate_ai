@@ -230,7 +230,11 @@ def segment(key):
             )
         db.session.commit()
         db.session.refresh(row)
-    return {"segment": public(row), "revisions": listed(Revision, segment_id=key)}
+    return {
+        "segment": public(row),
+        "revisions": listed(Revision, segment_id=key),
+        "material_kind": owned(Material, row.material_id).kind,
+    }
 
 
 @api.get("/review-inbox")

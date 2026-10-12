@@ -16,4 +16,9 @@ if (-not (Test-Path $pythonPath)) {
 if ($LASTEXITCODE -ne 0) { throw 'Database migration failed' }
 $workerProcess = Start-Process -FilePath $pythonPath -ArgumentList @('-m','flask','--app','app','worker') -WorkingDirectory $repoDir -WindowStyle Hidden -PassThru
 try { & $pythonPath -m waitress --listen="127.0.0.1:$Port" app:app }
-finally { Stop-Process -Id $workerProcess.Id -ErrorAction SilentlyContinue }
+finally {
+    Get-CimInstance Win32_Process -Filter "ParentProcessId = $($workerProcess.Id)" -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -eq 'python.exe' -and $_.CommandLine -match 'flask --app app worker' } |
+        ForEach-Object { Stop-Process -Id $_.ProcessId -ErrorAction SilentlyContinue }
+    Stop-Process -Id $workerProcess.Id -ErrorAction SilentlyContinue
+}
