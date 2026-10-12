@@ -327,3 +327,12 @@ db.Index(
 )
 db.Index("ix_sm_jobs_claim", Job.status, Job.created_at, Job.id)
 db.Index("ix_sm_jobs_recover", Job.status, Job.heartbeat)
+
+db.Index(
+    "ix_sm_attempts_card_latest",
+    Attempt.user_id,
+    Attempt.card_id,
+    Attempt.invalidated,
+    Attempt.created_at,
+    Attempt.id,
+)

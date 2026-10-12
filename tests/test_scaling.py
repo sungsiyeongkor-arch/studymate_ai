@@ -5,7 +5,17 @@ import pytest
 from sqlalchemy import select
 from conftest import Client
 from studymate.extensions import db
-from studymate.models import Course, Segment, User, Upload, Job, JobBatch, Artifact, now
+from studymate.models import (
+    Course,
+    Segment,
+    User,
+    Upload,
+    Job,
+    JobBatch,
+    Artifact,
+    Attempt,
+    now,
+)
 from studymate.services import jobs
 
 
@@ -290,3 +300,34 @@ def test_sqlite_backup_restore_and_checksum_rejection(app, client, tmp_path):
     (folder / "database.sqlite3").write_bytes(b"corrupt test backup")
     with pytest.raises(ValueError, match="checksum"):
         verify(folder, tmp_path / "should-not-exist.sqlite3")
+
+
+def test_old_mistake_survives_more_than_500_other_attempts(app, client):
+    lecture = client.setup_lecture()
+
+    def card():
+        return client.send(
+            "POST",
+            "/cards",
+            {"lecture_id": lecture["id"], "question": "q", "answer": "a"},
+        ).json["id"]
+
+    old, frequent = card(), card()
+    with app.app_context():
+        for i in range(602):
+            db.session.add(
+                Attempt(
+                    user_id=client.user["id"],
+                    card_id=old if i == 0 else frequent,
+                    request_key=str(i),
+                    answer="a",
+                    grade=0 if i == 0 else 3,
+                    snapshot={},
+                    previous_state={},
+                    next_due=now(),
+                    created_at=now() + timedelta(seconds=i),
+                )
+            )
+        db.session.commit()
+    result = client.send("GET", "/reviews/mistakes").json
+    assert [r["card"]["id"] for r in result["items"]] == [old]

@@ -11,10 +11,20 @@ import {
   date,
 } from "../lib/ui.js";
 import { bindForm, refresh } from "../app.js";
-export async function mistakesView() {
-  const d = await api("/reviews/mistakes");
+export async function mistakesView(cursor = "") {
+  const d = await api("/reviews/mistakes?cursor=" + encodeURIComponent(cursor));
   $("#content").innerHTML =
-    `<div class="page-heading"><div><span class="eyebrow">LEARN FROM MISTAKES</span><h1>오답 노트</h1><p>틀린 객관식과 ‘다시 학습’으로 평가한 카드를 돌아보세요.</p></div></div><div class="notes-grid">${d.items.map(({ card: c, attempt: a, stale }) => `<article class="panel stack"><h3>${esc(c.question)}</h3><p class="small">최근 복습 · ${date(a.created_at)}</p><div><strong>내 답변</strong><p class="prose">${esc(a.answer || "기록하지 않음")}</p></div><details><summary>정답과 해설 확인</summary><p class="prose">${esc(c.answer)}\n${esc(c.explanation)}</p></details>${stale ? '<div class="notice">근거가 수정되었습니다. 강의에서 새 문제를 생성하세요.</div>' : `<button class="btn primary revisit" data-id="${c.id}">오늘 다시 복습하기</button>`}<a class="text-link" href="#/lecture/${c.lecture_id}">강의자료 확인 →</a></article>`).join("") || empty("다시 확인할 카드가 없어요", "최근 500개 평가에서 카드별 마지막 결과를 확인합니다. 오류로 신고한 평가는 제외합니다.")}</div>`;
+    `<div class="page-heading"><div><span class="eyebrow">LEARN FROM MISTAKES</span><h1>오답 노트</h1><p>틀린 객관식과 ‘다시 학습’으로 평가한 카드를 돌아보세요.</p></div></div><div class="notes-grid">${d.items.map(({ card: c, attempt: a, stale }) => `<article class="panel stack"><h3>${esc(c.question)}</h3><p class="small">최근 복습 · ${date(a.created_at)}</p><div><strong>내 답변</strong><p class="prose">${esc(a.answer || "기록하지 않음")}</p></div><details><summary>정답과 해설 확인</summary><p class="prose">${esc(c.answer)}\n${esc(c.explanation)}</p></details>${stale ? '<div class="notice">근거가 수정되었습니다. 강의에서 새 문제를 생성하세요.</div>' : `<button class="btn primary revisit" data-id="${c.id}">오늘 다시 복습하기</button>`}<a class="text-link" href="#/lecture/${c.lecture_id}">강의자료 확인 →</a></article>`).join("") || empty("다시 확인할 카드가 없어요", "전체 평가에서 카드별 마지막 결과를 확인합니다. 오류로 신고한 평가는 제외합니다.")}</div>`;
+  const paging = document.createElement("div");
+  paging.className = "row";
+  paging.innerHTML =
+    '<button class="btn" id="mistakes-first">처음</button><button class="btn" id="mistakes-next">다음 오답</button>';
+  $(".notes-grid").after(paging);
+  $("#mistakes-next").disabled = !d.next_cursor;
+  $("#mistakes-first").onclick = () =>
+    busy($("#mistakes-first"), () => mistakesView());
+  $("#mistakes-next").onclick = () =>
+    busy($("#mistakes-next"), () => mistakesView(d.next_cursor));
   $$(".revisit").forEach(
     (b) =>
       (b.onclick = () =>
