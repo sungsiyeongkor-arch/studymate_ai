@@ -1,0 +1,36 @@
+{
+  "synthetic_only": true,
+  "database": "SQLite",
+  "tenants": 10,
+  "segment_rows": 1000000,
+  "database_bytes": 837767168,
+  "insert_seconds": 144.97,
+  "python_insertion_peak_bytes": 1900677,
+  "batch_size": 2000,
+  "measurements": {
+    "first_page": {
+      "rows_returned": 51,
+      "median_ms": 0.444,
+      "p95_ms": 0.985
+    },
+    "deep_keyset": {
+      "rows_returned": 51,
+      "median_ms": 0.334,
+      "p95_ms": 1.221
+    },
+    "deep_offset_comparison": {
+      "rows_returned": 51,
+      "median_ms": 23.211,
+      "p95_ms": 29.682
+    }
+  },
+  "query_plan": [
+    [
+      5,
+      0,
+      191,
+      "SEARCH sm_segments USING INDEX ix_sm_segments_owner_page (user_id=?)"
+    ]
+  ],
+  "limitations": "Local warm-cache single-process SELECT probe, not PostgreSQL production throughput, concurrency, AI quality, or maximum capacity."
+}

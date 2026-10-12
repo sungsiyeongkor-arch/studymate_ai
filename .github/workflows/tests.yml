@@ -32,6 +32,26 @@ jobs:
         run: |
           flask --app app db upgrade
           flask --app app db check
+      - name: PostgreSQL migration, search index and restore drill
+        env:
+          DATABASE_URL: postgresql+psycopg://postgres:test-only@localhost:5432/studymate_test
+          RESTORE_DATABASE_URL: postgresql+psycopg://postgres:test-only@localhost:5432/studymate_restore_check
+          PGPASSWORD: test-only
+        run: |
+          export PATH=/usr/lib/postgresql/17/bin:$PATH
+          flask --app app db upgrade
+          flask --app app search-index
+          flask --app app db check
+          python scripts/check-postgres.py
+          python scripts/backup-database.py --output test-results/pg-backup
+          createdb -h localhost -U postgres studymate_restore_check
+          python scripts/verify-backup.py --backup test-results/pg-backup
+      - name: Archive validation reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: database-validation
+          path: test-results/*report.json
       - uses: actions/setup-node@v4
         with:
           node-version: '22'

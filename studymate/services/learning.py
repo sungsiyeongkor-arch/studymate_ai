@@ -8,7 +8,7 @@ from .retrieval import segments_for, source_dict
 
 def source_batches(user_id, lecture_id):
     """Every readable source is processed; no silent whole-document truncation."""
-    batches, batch, size = [], [], 0
+    batch, size = [], 0
     for segment in segments_for(user_id, lecture_id):
         if segment.state in ("uncertain", "unreadable"):
             continue
@@ -19,13 +19,12 @@ def source_batches(user_id, lecture_id):
                 "offset": start,
             }
             if size + len(item["text"]) > 18000 and batch:
-                batches.append(batch)
+                yield batch
                 batch, size = [], 0
             batch.append(item)
             size += len(item["text"])
     if batch:
-        batches.append(batch)
-    return batches
+        yield batch
 
 
 def generate_batch(user_id, lecture_id, kind, sources, options):

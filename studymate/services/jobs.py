@@ -10,7 +10,7 @@ from pathlib import Path
 from flask import current_app
 from sqlalchemy import or_
 from ..extensions import db
-from ..models import Job, Material, Segment, Revision, Lecture, Term, now, uid
+from ..models import JobBatch, Job, Material, Segment, Revision, Lecture, Term, now, uid
 from .storage import path
 from .documents import extract
 from .provider import transcribe, credentials, ProviderError
@@ -35,17 +35,17 @@ def fence(job):
 
 def claim():
     cutoff = now() - timedelta(minutes=15)
-    candidate = (
-        Job.query.filter(
-            or_(
-                Job.status == "queued",
-                (Job.status == "running") & (Job.heartbeat < cutoff),
-            )
+    candidates = Job.query.filter(
+        or_(
+            Job.status == "queued",
+            (Job.status == "running") & (Job.heartbeat < cutoff),
         )
-        .order_by(Job.created_at)
-        .first()
-    )
+    ).order_by(Job.created_at, Job.id)
+    if db.engine.dialect.name == "postgresql":
+        candidates = candidates.with_for_update(skip_locked=True)
+    candidate = candidates.first()
     if not candidate:
+        db.session.rollback()
         return None
     token = uid()
     changed = Job.query.filter(
@@ -242,29 +242,62 @@ def process_audio(job):
 def process_learning(job):
     credentials(job.user_id)
     payload = dict(job.payload or {})
-    batches = payload.get("batches")
-    if batches is None:
-        batches = source_batches(job.user_id, job.lecture_id)
-        if not batches:
+    if not payload.get("snapshot_ready"):
+        fence(job)
+        JobBatch.query.filter_by(job_id=job.id).delete()
+        db.session.commit()
+        # Import old checkpoints once so deployment does not charge for completed batches again.
+        legacy = payload.get("batches")
+        completed = (
+            set(payload.get("completed_batches", [])) if legacy is not None else set()
+        )
+        count = 0
+        for index, sources in enumerate(
+            legacy
+            if legacy is not None
+            else source_batches(job.user_id, job.lecture_id)
+        ):
+            fence(job)
+            db.session.add(
+                JobBatch(
+                    user_id=job.user_id,
+                    job_id=job.id,
+                    ordinal=index,
+                    sources=sources,
+                    completed=index in completed,
+                )
+            )
+            db.session.commit()
+            count += 1
+        if not count:
             raise ValueError(
                 "읽을 수 있는 자료가 없습니다. 추출 또는 판독 확인을 먼저 완료해 주세요."
             )
-        payload["batches"] = batches
-        payload["completed_batches"] = []
-        job.payload = dict(payload)
-        db.session.commit()
-    completed = set(payload.get("completed_batches", []))
-    for index, sources in enumerate(batches):
-        if index in completed:
-            continue
-        checkpoint(job, len(completed), len(batches))
-        generate_batch(
-            job.user_id, job.lecture_id, job.kind, sources, payload.get("options", {})
+        payload.pop("batches", None)
+        payload["completed_batches"] = (
+            []
+        )  # old response compatibility; progress is stored in rows now
+        payload["snapshot_ready"] = True
+        job.payload = payload
+        checkpoint(job, len(completed), count)
+    while True:
+        batch = (
+            JobBatch.query.filter_by(job_id=job.id, completed=False)
+            .order_by(JobBatch.ordinal)
+            .first()
         )
-        completed.add(index)
-        payload["completed_batches"] = sorted(completed)
-        job.payload = dict(payload)
-        checkpoint(job, len(completed), len(batches))
+        if batch is None:
+            break
+        checkpoint(job, job.progress, job.total)
+        generate_batch(
+            job.user_id,
+            job.lecture_id,
+            job.kind,
+            batch.sources,
+            payload.get("options", {}),
+        )
+        batch.completed = True
+        checkpoint(job, job.progress + 1, job.total)
 
 
 def execute(job):

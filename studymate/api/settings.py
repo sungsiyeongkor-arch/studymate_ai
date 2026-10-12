@@ -1,3 +1,5 @@
+from flask import Response, stream_with_context, current_app
+from ..models import User, now
 from .common import (
     Artifact,
     Attempt,
@@ -36,6 +38,11 @@ def settings():
         db.session.commit()
     return {
         "user": public(g.user),
+        "storage": {
+            "used": g.user.storage_used,
+            "reserved": g.user.storage_reserved,
+            "limit": current_app.config["STORAGE_LIMIT_BYTES"],
+        },
         "examples": listed(HandwritingExample),
         "usage": [
             public(u)
@@ -55,29 +62,53 @@ def delete_example(key):
 
 @api.get("/account/export")
 def account_export():
-    records = {
-        model.__tablename__: listed(model)
-        for model in (
-            Course,
-            Lecture,
-            Material,
-            Segment,
-            Revision,
-            Term,
-            Artifact,
-            Citation,
-            Card,
-            ReviewState,
-            Attempt,
-            Chat,
-            HandwritingExample,
-            Usage,
+    user_id = g.user.id
+    account = public(g.user)
+    started = now()
+    models = (
+        Course,
+        Lecture,
+        Material,
+        Segment,
+        Revision,
+        Term,
+        Artifact,
+        Citation,
+        Card,
+        ReviewState,
+        Attempt,
+        Chat,
+        HandwritingExample,
+        Usage,
+    )
+
+    def generate():
+        yield '{"export_meta":' + json.dumps(
+            {
+                "started_at": started.isoformat() + "Z",
+                "consistency": "per-table read; concurrent edits can be included; not a database backup",
+            }
         )
-    }
-    records["account"] = public(g.user)
-    return send_file(
-        io.BytesIO(json.dumps(records, ensure_ascii=False, indent=2).encode("utf-8")),
+        yield ',"account":' + json.dumps(account, ensure_ascii=False)
+        for model in models:
+            yield "," + json.dumps(model.__tablename__) + ":["
+            first = True
+            query = model.query.filter(
+                model.user_id == user_id, model.created_at <= started
+            ).order_by(model.created_at, model.id)
+            for row in query.yield_per(100):
+                if not first:
+                    yield ","
+                first = False
+                yield json.dumps(public(row), ensure_ascii=False)
+            yield "]"
+        yield "}"
+
+    return Response(
+        stream_with_context(generate()),
         mimetype="application/json",
-        as_attachment=True,
-        download_name="studymate-learning-records.json",
+        headers={
+            "Content-Disposition": 'attachment; filename="studymate-learning-records.json"',
+            "X-Accel-Buffering": "no",
+        },
     )

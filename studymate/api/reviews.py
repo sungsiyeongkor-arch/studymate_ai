@@ -1,3 +1,4 @@
+from ..services.pagination import page
 from .common import (
     Artifact,
     Attempt,
@@ -21,20 +22,16 @@ from .common import (
 @api.route("/cards", methods=["GET", "POST"])
 def cards():
     if request.method == "GET":
-        rows = (
-            Card.query.filter_by(user_id=g.user.id)
-            .order_by(Card.created_at.desc())
-            .all()
-        )
-        return {
-            "items": [
-                {
-                    **public(c),
-                    "review": public(ReviewState.query.filter_by(card_id=c.id).one()),
-                }
-                for c in rows
-            ]
+        batch = page(Card.query.filter_by(user_id=g.user.id), Card, {})
+        ids = [c["id"] for c in batch["items"]]
+        states = {
+            r.card_id: public(r)
+            for r in ReviewState.query.filter(
+                ReviewState.user_id == g.user.id, ReviewState.card_id.in_(ids)
+            )
         }
+        batch["items"] = [{**c, "review": states.get(c["id"])} for c in batch["items"]]
+        return batch
     data = body()
     lecture = owned(Lecture, data.get("lecture_id"))
     choices = data.get("options", [])

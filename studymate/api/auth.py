@@ -1,3 +1,5 @@
+from sqlalchemy import text as sql_text
+from ..extensions import db
 from .common import (
     IntegrityError,
     ProviderError,
@@ -29,6 +31,16 @@ def provider_error(error):
 @api.get("/health")
 def health():
     return {"status": "ok", "version": "2.0.0"}
+
+
+@api.get("/ready")
+def ready():
+    try:
+        db.session.execute(sql_text("SELECT 1"))
+        return {"status": "ready"}
+    except Exception:
+        db.session.rollback()
+        return {"status": "unavailable"}, 503
 
 
 @api.get("/session")

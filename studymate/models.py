@@ -23,6 +23,12 @@ class User(Record, db.Model):
     email = db.Column(db.String(254), unique=True, nullable=False)
     name = db.Column(db.String(80), nullable=False)
     password_hash = db.Column(db.Text, nullable=False)
+    storage_used = db.Column(
+        db.BigInteger, nullable=False, default=0, server_default="0"
+    )
+    storage_reserved = db.Column(
+        db.BigInteger, nullable=False, default=0, server_default="0"
+    )
     personalization = db.Column(db.Boolean, default=False, nullable=False)
 
 
@@ -118,6 +124,18 @@ class Job(Owned, db.Model):
     attempts = db.Column(db.Integer, default=0)
     heartbeat = db.Column(db.DateTime)
     lease_token = db.Column(db.String(32))
+
+
+class JobBatch(Owned, db.Model):
+    __tablename__ = "sm_job_batches"
+    job_id = db.Column(db.String(32), db.ForeignKey("sm_jobs.id"), nullable=False)
+    ordinal = db.Column(db.Integer, nullable=False)
+    sources = db.Column(db.JSON, nullable=False)
+    completed = db.Column(db.Boolean, nullable=False, default=False)
+    __table_args__ = (
+        db.UniqueConstraint("job_id", "ordinal", name="uq_sm_job_batches_position"),
+        db.Index("ix_sm_job_batches_pending", "job_id", "completed", "ordinal"),
+    )
 
 
 class Artifact(Owned, db.Model):
@@ -219,6 +237,7 @@ class Upload(Owned, db.Model):
     chunk_size = db.Column(db.Integer, default=4 * 1024 * 1024)
     status = db.Column(db.String(20), default="pending")
     material_id = db.Column(db.String(32), db.ForeignKey("sm_materials.id"))
+    expires_at = db.Column(db.DateTime, nullable=True, index=True)
 
 
 class UploadChunk(Owned, db.Model):
@@ -254,3 +273,57 @@ def public(record, exclude=()):
             value.isoformat() + "Z" if isinstance(value, datetime) else value
         )
     return out
+
+
+# Tenant-first keyset indexes: stable ties use the immutable primary key.
+for _model in (
+    Course,
+    Lecture,
+    Material,
+    Segment,
+    Revision,
+    Term,
+    Job,
+    Artifact,
+    Citation,
+    Card,
+    ReviewState,
+    Attempt,
+    Chat,
+    HandwritingExample,
+    Upload,
+    Usage,
+):
+    db.Index(
+        f"ix_{_model.__tablename__}_owner_page",
+        _model.user_id,
+        _model.created_at,
+        _model.id,
+    )
+for _model, _parent in (
+    (Lecture, "course_id"),
+    (Material, "lecture_id"),
+    (Artifact, "lecture_id"),
+    (Term, "course_id"),
+    (Chat, "lecture_id"),
+    (Job, "lecture_id"),
+    (Revision, "segment_id"),
+    (Card, "lecture_id"),
+):
+    db.Index(
+        f"ix_{_model.__tablename__}_parent_page",
+        _model.user_id,
+        getattr(_model, _parent),
+        _model.created_at,
+        _model.id,
+    )
+db.Index("ix_sm_review_due_owner", ReviewState.user_id, ReviewState.due, ReviewState.id)
+db.Index(
+    "ix_sm_inbox_owner_state",
+    Segment.user_id,
+    Segment.state,
+    Segment.created_at,
+    Segment.id,
+)
+db.Index("ix_sm_jobs_claim", Job.status, Job.created_at, Job.id)
+db.Index("ix_sm_jobs_recover", Job.status, Job.heartbeat)
